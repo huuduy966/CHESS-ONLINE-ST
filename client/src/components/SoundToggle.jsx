@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Volume2, VolumeX } from 'lucide-react'
 import { sfx } from '../utils/sound.js'
 
 export default function SoundToggle() {
@@ -10,8 +11,8 @@ export default function SoundToggle() {
     if (next) sfx.move() // preview
   }
   return (
-    <button className="theme-toggle" onClick={click} title={on ? 'Tắt âm thanh' : 'Bật âm thanh'}>
-      {on ? '🔊' : '🔇'}
+    <button className="theme-toggle" onClick={click} title={on ? 'Tắt âm thanh' : 'Bật âm thanh'} aria-label="Toggle sound">
+      {on ? <Volume2 size={18} /> : <VolumeX size={18} />}
     </button>
   )
 }

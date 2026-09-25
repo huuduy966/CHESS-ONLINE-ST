@@ -1,39 +1,186 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Chess } from 'chess.js'
 import Board from '../components/Board.jsx'
 import StatusBar from '../components/StatusBar.jsx'
 import MoveHistory from '../components/MoveHistory.jsx'
 import ResultModal from '../components/ResultModal.jsx'
 import Clock from '../components/Clock.jsx'
+import CapturedPieces from '../components/CapturedPieces.jsx'
+import { PieceCircle } from '../components/PieceCircle.jsx'
+import { MessageSquare, Send, Activity, Info, ScrollText, Columns, X, Smile } from 'lucide-react'
 import { playMoveSound, sfx } from '../utils/sound.js'
 import { socket } from '../utils/socket.js'
 import { useAuth } from '../utils/auth.jsx'
 import { DEFAULT_ELO, scoresFor } from '../utils/elo.js'
+import { useGameLock } from '../utils/gameLock.jsx'
+import { useLanguage } from '../utils/language.jsx'
+
+const QUICK_EMOJIS = ['♟️', '👑', '🏆', '🤝', '🔥', '👏', '😅', '👍', '🎯', '⚡']
 
 export default function OnlineGame() {
   const { roomId } = useParams()
   const navigate = useNavigate()
-  const { user, profile, recordGame } = useAuth()
+  const location = useLocation()
+  const { user, profile, recordGame, updateLastGameMoves } = useAuth()
+  const { setGameLocked, setResignHandler, requestNavigation } = useGameLock()
+  const { t } = useLanguage()
   const [state, setState] = useState(null)
-  const [color, setColor] = useState(null)
+  const [color, setColor] = useState(() => location.state?.initialColor || null)
   const [error, setError] = useState('')
   const [chat, setChat] = useState([])
   const [chatInput, setChatInput] = useState('')
   const [resignedBy, setResignedBy] = useState(null)
   const [eloResult, setEloResult] = useState(null)
   const [outcome, setOutcome] = useState(null)         // 'win' | 'loss' | 'draw'
-  const [outcomeLabel, setOutcomeLabel] = useState('') // subtitle: 'Chiếu hết' / 'Đối thủ đầu hàng'
+  const [outcomeLabel, setOutcomeLabel] = useState('') // subtitle
   const [rematchState, setRematchState] = useState('idle') // idle | sent | received | declined
   const [savedMoves, setSavedMoves] = useState(null)   // SAN list để xem lại
   const [showResult, setShowResult] = useState(false)
+  const [activeTab, setActiveTab] = useState('chat') // 'chat' | 'moves' | 'split'
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const recordedRef = useRef(false)
   const chatEndRef = useRef(null)
+
+  // Track latest color and state via refs to avoid stale closures
+  const colorRef = useRef(color)
+  colorRef.current = color
+  const stateRef = useRef(state)
+  stateRef.current = state
 
   const game = useMemo(() => {
     if (!state) return new Chess()
     try { return new Chess(state.fen) } catch { return new Chess() }
   }, [state?.fen])
+
+  // Determine active player's color
+  const mySeat = color || (state?.players?.w?.name === user ? 'w' : state?.players?.b?.name === user ? 'b' : (state?.players?.w?.id === socket.id ? 'w' : state?.players?.b?.id === socket.id ? 'b' : 'w'))
+  const oppSeat = mySeat === 'w' ? 'b' : 'w'
+  const isSpectator = color === 'spectator' || (state && state.players.w?.name !== user && state.players.b?.name !== user && state.players.w?.id !== socket.id && state.players.b?.id !== socket.id && !color)
+
+  const isMatchActive = Boolean(
+    !isSpectator &&
+    state?.players?.w &&
+    state?.players?.b &&
+    !state?.isGameOver &&
+    !resignedBy &&
+    !showResult &&
+    !state?.ended
+  )
+
+  // Resign action inside game (deducts Elo immediately and sends resign packet)
+  const handleResign = useCallback(() => {
+    const seat = colorRef.current || (stateRef.current?.players?.w?.name === user ? 'w' : stateRef.current?.players?.b?.name === user ? 'b' : null)
+    if (!seat || seat === 'spectator') return
+
+    // 1. Emit resign to server
+    socket.emit('resign', { roomId })
+
+    // 2. Immediately record loss and deduct Elo with move history
+    if (!recordedRef.current) {
+      recordedRef.current = true
+      const targetOppSeat = seat === 'w' ? 'b' : 'w'
+      const oppPlayer = stateRef.current?.players?.[targetOppSeat]
+      const oppElo = oppPlayer?.elo ?? DEFAULT_ELO
+      const oppName = oppPlayer?.name || 'Đối thủ'
+      const currentMoves = (stateRef.current?.history || []).slice()
+
+      const r = recordGame(0, oppElo, 'online', {
+        opponent: oppName,
+        oppElo,
+        moves: currentMoves,
+        whiteName: seat === 'w' ? user : oppName,
+        blackName: seat === 'b' ? user : oppName,
+        myColor: seat
+      })
+      if (r) setEloResult(r)
+      setSavedMoves(currentMoves)
+    }
+
+    setOutcome('loss')
+    setOutcomeLabel(t('youResignedSub'))
+    setShowResult(true)
+    setResignedBy(seat)
+  }, [roomId, user, recordGame])
+
+  // Resign and Leave (deducts Elo immediately, emits resign + leave, then allows navigation)
+  const resignAndLeave = useCallback(() => {
+    if (!recordedRef.current && isMatchActive) {
+      recordedRef.current = true
+      const seat = colorRef.current || (stateRef.current?.players?.w?.name === user ? 'w' : stateRef.current?.players?.b?.name === user ? 'b' : null)
+      if (seat && seat !== 'spectator') {
+        const targetOppSeat = seat === 'w' ? 'b' : 'w'
+        const oppPlayer = stateRef.current?.players?.[targetOppSeat]
+        const oppElo = oppPlayer?.elo ?? DEFAULT_ELO
+        const oppName = oppPlayer?.name || 'Đối thủ'
+        const currentMoves = (stateRef.current?.history || []).slice()
+        recordGame(0, oppElo, 'online', {
+          opponent: oppName,
+          oppElo,
+          moves: currentMoves,
+          whiteName: seat === 'w' ? user : oppName,
+          blackName: seat === 'b' ? user : oppName,
+          myColor: seat
+        })
+        setSavedMoves(currentMoves)
+      }
+    }
+    socket.emit('resign', { roomId })
+    socket.emit('leave-room', { roomId })
+  }, [roomId, isMatchActive, user, recordGame])
+
+  // Lock navigation during active match; if user confirms leaving, resignAndLeave triggers
+  useEffect(() => {
+    setGameLocked(isMatchActive)
+    if (isMatchActive) {
+      setResignHandler(resignAndLeave)
+    } else {
+      setResignHandler(null)
+    }
+    return () => {
+      setGameLocked(false)
+      setResignHandler(null)
+    }
+  }, [isMatchActive, setGameLocked, setResignHandler, resignAndLeave])
+
+  // Unload protection: deduct Elo if player reloads / closes browser during active match
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (isMatchActive && !recordedRef.current) {
+        recordedRef.current = true
+        const seat = colorRef.current || (stateRef.current?.players?.w?.name === user ? 'w' : stateRef.current?.players?.b?.name === user ? 'b' : null)
+        if (seat && seat !== 'spectator') {
+          const targetOppSeat = seat === 'w' ? 'b' : 'w'
+          const oppPlayer = stateRef.current?.players?.[targetOppSeat]
+          const oppElo = oppPlayer?.elo ?? DEFAULT_ELO
+          const oppName = oppPlayer?.name || 'Đối thủ'
+          const currentMoves = (stateRef.current?.history || []).slice()
+          recordGame(0, oppElo, 'online', {
+            opponent: oppName,
+            oppElo,
+            moves: currentMoves,
+            whiteName: seat === 'w' ? user : oppName,
+            blackName: seat === 'b' ? user : oppName,
+            myColor: seat
+          })
+        }
+        socket.emit('resign', { roomId })
+        socket.emit('leave-room', { roomId })
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isMatchActive, roomId, user, recordGame])
+
+  const handleLeaveRoom = () => {
+    if (isMatchActive) {
+      requestNavigation('/')
+    } else {
+      socket.emit('leave-room', { roomId })
+      navigate('/')
+    }
+  }
 
   useEffect(() => {
     if (!user) { setError('Bạn cần đăng nhập để chơi online'); return }
@@ -45,16 +192,32 @@ export default function OnlineGame() {
         setError(res?.error || 'Lỗi không xác định')
         return
       }
-      setColor(res.color)
+      if (res.color) {
+        setColor(res.color)
+        colorRef.current = res.color
+      }
+      if (res.state) {
+        stateRef.current = res.state
+        setState({ ...res.state, receivedAt: Date.now() })
+      }
     })
 
-    const onState = (s) => setState({ ...s, receivedAt: Date.now() })
-    const onChat = (msg) => setChat((c) => [...c, msg])
+    const onState = (s) => {
+      stateRef.current = s
+      setState({ ...s, receivedAt: Date.now() })
+    }
+    const onChat = (msg) => {
+      setChat((c) => [...c, msg])
+      setActiveTab((tab) => {
+        if (tab === 'moves') {
+          setUnreadCount((cnt) => cnt + 1)
+        }
+        return tab
+      })
+    }
     const onResigned = ({ color: resignColor }) => setResignedBy(resignColor)
-    const onResult = (data) => {
-      if (recordedRef.current) return
-      recordedRef.current = true
 
+    const onResult = (data) => {
       const outcomeMap = {
         white_win: 'white_win', black_win: 'black_win', draw: 'draw',
         white_resign: 'black_win', black_resign: 'white_win',
@@ -62,33 +225,72 @@ export default function OnlineGame() {
       }
       const o = outcomeMap[data.outcome] || 'draw'
 
-      const isResign = data.outcome === 'white_resign' || data.outcome === 'black_resign'
-      const isTimeout = data.outcome === 'white_timeout' || data.outcome === 'black_timeout'
+      let currentSeat = colorRef.current
+      if (!currentSeat || currentSeat === 'spectator') {
+        if (data.players?.w?.name === user || data.players?.w?.id === socket.id) currentSeat = 'w'
+        else if (data.players?.b?.name === user || data.players?.b?.id === socket.id) currentSeat = 'b'
+        else currentSeat = 'w'
+      }
+
       let label = ''
-      if (data.outcome === 'draw') label = 'Hòa cờ'
-      else if (isResign) label = 'Có người đầu hàng'
-      else if (isTimeout) label = 'Hết giờ'
-      else label = 'Chiếu hết'
+      if (data.outcome === 'white_resign') {
+        label = currentSeat === 'w' ? t('youResignedSub') : t('oppResignedSub')
+      } else if (data.outcome === 'black_resign') {
+        label = currentSeat === 'b' ? t('youResignedSub') : t('oppResignedSub')
+      } else if (data.outcome === 'white_timeout' || data.outcome === 'black_timeout') {
+        label = t('timeoutSub')
+      } else if (data.outcome === 'draw') {
+        label = t('drawMatch')
+      } else {
+        label = t('checkmateSub')
+      }
       setOutcomeLabel(label)
 
-      let myOut
-      if (o === 'draw') myOut = 'draw'
-      else if ((o === 'white_win' && color === 'w') || (o === 'black_win' && color === 'b')) myOut = 'win'
-      else myOut = 'loss'
+      const { w, b } = scoresFor(o)
+      const myScore = currentSeat === 'w' ? w : b
+      let myOut = 'draw'
+      if (myScore === 1) myOut = 'win'
+      else if (myScore === 0) myOut = 'loss'
       setOutcome(myOut)
       setShowResult(true)
 
-      if (!user || (color !== 'w' && color !== 'b')) return
-      const { w, b } = scoresFor(o)
-      const myScore = color === 'w' ? w : b
-      const oppPlayer = color === 'w' ? data.players.b : data.players.w
+      const targetOppSeat = currentSeat === 'w' ? 'b' : 'w'
+      const oppPlayer = data.players?.[targetOppSeat] || stateRef.current?.players?.[targetOppSeat]
       const oppElo = oppPlayer?.elo ?? DEFAULT_ELO
-      const r = recordGame(myScore, oppElo, 'online', { opponent: oppPlayer?.name || 'Đối thủ' })
-      if (r) setEloResult(r)
+      const oppName = oppPlayer?.name || 'Đối thủ'
+      const rawMoves = (data.history && data.history.length > 0) ? data.history : (stateRef.current?.history || [])
+      const currentMoves = rawMoves.slice()
+      setSavedMoves(currentMoves)
+
+      if (!user || (currentSeat !== 'w' && currentSeat !== 'b')) return
+
+      if (!recordedRef.current) {
+        recordedRef.current = true
+        const r = recordGame(myScore, oppElo, 'online', {
+          opponent: oppName,
+          oppElo,
+          moves: currentMoves,
+          whiteName: (currentSeat === 'w' ? user : oppName),
+          blackName: (currentSeat === 'b' ? user : oppName),
+          myColor: currentSeat
+        })
+        if (r) setEloResult(r)
+      } else {
+        // Luôn đảm bảo profile có đầy đủ moves kể cả khi đã xử lý resign trước đó
+        if (currentMoves.length > 0) {
+          updateLastGameMoves(currentMoves, {
+            whiteName: (currentSeat === 'w' ? user : oppName),
+            blackName: (currentSeat === 'b' ? user : oppName),
+            myColor: currentSeat,
+            opponent: oppName,
+            oppElo
+          })
+        }
+      }
     }
+
     const onRematchOffer = () => setRematchState('received')
     const onRematchAccepted = () => {
-      // Server đã reset + swap màu, gửi state mới qua 'state'
       setRematchState('idle')
       setShowResult(false)
       setResignedBy(null)
@@ -97,9 +299,18 @@ export default function OnlineGame() {
       setOutcomeLabel('')
       setSavedMoves(null)
       recordedRef.current = false
-      // color sẽ đổi sau khi nhận state mới — dùng useEffect khác để re-detect
+      socket.emit('join-room', { roomId, name: user, elo: profile?.elo ?? DEFAULT_ELO }, (res) => {
+        if (res?.ok) {
+          if (res.color) {
+            setColor(res.color)
+            colorRef.current = res.color
+          }
+          if (res.state) setState({ ...res.state, receivedAt: Date.now() })
+        }
+      })
     }
     const onRematchDeclined = () => setRematchState('declined')
+
     socket.on('state', onState)
     socket.on('chat', onChat)
     socket.on('resigned', onResigned)
@@ -107,6 +318,7 @@ export default function OnlineGame() {
     socket.on('rematch-offer', onRematchOffer)
     socket.on('rematch-accepted', onRematchAccepted)
     socket.on('rematch-declined', onRematchDeclined)
+
     return () => {
       socket.off('state', onState)
       socket.off('chat', onChat)
@@ -116,54 +328,62 @@ export default function OnlineGame() {
       socket.off('rematch-accepted', onRematchAccepted)
       socket.off('rematch-declined', onRematchDeclined)
     }
-  }, [roomId, user, profile?.elo, color, recordGame])
+  }, [roomId, user, profile?.elo, recordGame, updateLastGameMoves])
 
-  // Khi nhận game-result, snapshot history hiện tại để dùng cho xem lại
+  // Snapshot history when result arrives or when state is updated
   useEffect(() => {
-    if (showResult && state?.history && !savedMoves) {
-      setSavedMoves(state.history.slice())
+    if (showResult) {
+      const moves = (stateRef.current?.history && stateRef.current.history.length > 0)
+        ? stateRef.current.history.slice()
+        : (state?.history ? state.history.slice() : null)
+      if (moves && moves.length > 0 && (!savedMoves || savedMoves.length < moves.length)) {
+        setSavedMoves(moves)
+      }
     }
   }, [showResult, state?.history, savedMoves])
-
-  // Sau rematch-accepted, server gửi state mới → cập nhật color theo seat mới
-  useEffect(() => {
-    if (!state) return
-    // Tìm color theo socket.id trong state — server không gửi id, mình dùng cách khác:
-    // Khi accept rematch, server swap nên color của mình cũng đổi sang ngược lại
-    // Nhưng vì server không gửi color qua state, mình phải emit 'who-am-i'? — đơn giản: rely on join-room đã set color ban đầu.
-    // Sau rematch, mình cầm màu ngược lại. Nhưng socket vẫn cùng id, server đã swap players.
-    // → Mình refetch color bằng cách emit join-room lại, server check id và trả color hiện tại.
-  }, [state?.players?.w?.name, state?.players?.b?.name])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chat])
 
-  const onMove = useCallback((move) => {
-    if (color === 'spectator' || !state) return false
-    if (state.turn !== color) return false
-    let verbose
-    try {
-      const test = new Chess(state.fen)
-      verbose = test.move(move)
-      if (!verbose) return false
-      playMoveSound(verbose, test)
-    } catch { return false }
-    socket.emit('move', { roomId, move }, (res) => {
-      if (!res?.ok) setError(res?.error || 'Nước đi bị từ chối')
-    })
-    return true
-  }, [color, state, roomId])
+  const onMove = useCallback(
+    (move) => {
+      const st = stateRef.current
+      const col = colorRef.current
+      if (!st) return false
+      const currentSeat = col || (st.players.w?.name === user ? 'w' : st.players.b?.name === user ? 'b' : (st.players.w?.id === socket.id ? 'w' : st.players.b?.id === socket.id ? 'b' : null))
+      if (currentSeat === 'spectator' || !currentSeat) return false
+      if (st.turn !== currentSeat) return false
+
+      let verbose
+      try {
+        const test = new Chess(st.fen)
+        verbose = test.move(move)
+        if (!verbose) return false
+        playMoveSound(verbose, test)
+      } catch {
+        return false
+      }
+
+      socket.emit('move', { roomId, move }, (res) => {
+        if (!res?.ok) setError(res?.error || 'Nước đi bị từ chối')
+      })
+      return true
+    },
+    [roomId, user]
+  )
 
   const sendChat = (e) => {
     e.preventDefault()
     if (!chatInput.trim()) return
-    socket.emit('chat', { roomId, message: chatInput })
+    socket.emit('chat', { roomId, message: chatInput.trim() })
     setChatInput('')
+    setEmojiOpen(false)
   }
 
-  const resign = () => {
-    if (color === 'w' || color === 'b') socket.emit('resign', { roomId })
+  const sendQuickChat = (message) => {
+    if (!message) return
+    socket.emit('chat', { roomId, message })
   }
 
   const requestRematch = () => {
@@ -173,9 +393,14 @@ export default function OnlineGame() {
 
   const acceptRematch = () => {
     socket.emit('rematch-accept', { roomId })
-    // Sau khi accept, mình ngồi ghế ngược lại — refetch
     socket.emit('join-room', { roomId, name: user, elo: profile?.elo ?? DEFAULT_ELO }, (res) => {
-      if (res?.ok) setColor(res.color)
+      if (res?.ok) {
+        if (res.color) {
+          setColor(res.color)
+          colorRef.current = res.color
+        }
+        if (res.state) setState({ ...res.state, receivedAt: Date.now() })
+      }
     })
   }
 
@@ -184,109 +409,126 @@ export default function OnlineGame() {
     setRematchState('idle')
   }
 
-  // Khi rematch-accepted (mình là người gửi), cũng refetch color
-  useEffect(() => {
-    if (rematchState !== 'idle') return
-    // no-op
-  }, [rematchState])
-
-  // Sound khi đối thủ vừa đi (state mới đến và history dài hơn)
+  // Sound when opponent moves
   const lastHistoryLenRef = useRef(0)
   useEffect(() => {
     if (!state) return
     const prev = lastHistoryLenRef.current
     const curr = state.history.length
     lastHistoryLenRef.current = curr
-    if (curr <= prev) return
-    if (curr === 0) return
-    // Replay từ FEN trước nước cuối để biết verboseMove
+    if (curr <= prev || curr === 0) return
+
     try {
       const replay = new Chess()
       for (let i = 0; i < curr - 1; i++) replay.move(state.history[i])
       const lastSan = state.history[curr - 1]
       const verbose = replay.move(lastSan)
-      // Chỉ phát sound khi đó là nước của đối thủ — tránh double với onMove của mình
-      // Nước cuối có color = lượt trước của state.turn hiện tại (đã đảo)
       const moverColor = state.turn === 'w' ? 'b' : 'w'
-      if (moverColor !== color) {
+      if (moverColor !== mySeat) {
         playMoveSound(verbose, replay)
       }
     } catch {}
-  }, [state?.history, state?.turn, color])
+  }, [state?.history, state?.turn, mySeat])
 
-  // Sound cho resign và game over
+  // Sound for resign and game over
   useEffect(() => {
     if (resignedBy) sfx.checkmate()
   }, [resignedBy])
+
   useEffect(() => {
     if (state?.isGameOver && state.isDraw) sfx.draw()
   }, [state?.isGameOver, state?.isDraw])
 
-  // Mình bên nào thì tên/info hiển thị ở dưới, đối thủ ở trên
-  const mySeat = color === 'w' || color === 'b' ? color : 'w'
-  const oppSeat = mySeat === 'w' ? 'b' : 'w'
   const hasClock = state && state.tc && state.tc.initialMs > 0
-  const renderPlayerCard = (seat) => (
-    <div key={seat} className={`player-card ${state.turn === seat ? 'active' : ''}`}>
-      <span className="player-info">
-        {seat === 'w' ? '⚪' : '⚫'} {state.players[seat]?.name || '(chờ người vào)'}
-        {state.players[seat] ? ` · ${state.players[seat].elo}` : ''}
-        {color !== 'spectator' && seat === color ? ' (Bạn)' : ''}
-      </span>
-      {hasClock && state.players[seat] && (
-        <Clock
-          baseMs={state.clocks[seat]}
-          running={state.clockRunning && state.turn === seat}
-          since={state.receivedAt}
-        />
-      )}
-    </div>
-  )
+  const renderPlayerCard = (seat) => {
+    const isPlayerSeat = !isSpectator && seat === mySeat
+    const playerName = state?.players[seat]?.name || t('waitingOpponentJoin')
+    const playerElo = state?.players[seat]?.elo
+
+    return (
+      <div key={seat} className={`player-card ${state?.turn === seat ? 'active' : ''}`}>
+        <div className="player-card-header">
+          <div className="player-info-container">
+            <div className="player-name-row">
+              <PieceCircle color={seat} size={13} style={{ flexShrink: 0 }} />
+              <strong className="player-name-full">{playerName}</strong>
+              {isPlayerSeat && <span className="player-you-tag">{t('youIndicator')}</span>}
+            </div>
+            {playerElo != null && (
+              <div className="player-meta-row">
+                <span className="player-elo-text">{playerElo} Elo</span>
+              </div>
+            )}
+          </div>
+          {hasClock && state?.players[seat] && (
+            <Clock
+              baseMs={state.clocks[seat]}
+              running={state.clockRunning && state.turn === seat}
+              since={state.receivedAt}
+            />
+          )}
+        </div>
+        <CapturedPieces game={game} color={seat} size={14} />
+      </div>
+    )
+  }
 
   if (error) {
     return (
       <div className="lobby">
         <div className="lobby-card">
-          <h2>Lỗi</h2>
+          <h2>Error</h2>
           <p>{error}</p>
-          <button className="btn" onClick={() => navigate('/online')}>Về lobby</button>
+          <button className="btn" onClick={() => navigate('/')}>{t('returnHomeDirect')}</button>
         </div>
       </div>
     )
   }
 
   if (!state) {
-    return <div className="lobby"><div className="lobby-card"><h2>Đang vào phòng...</h2></div></div>
+    return (
+      <div className="lobby">
+        <div className="lobby-card">
+          <h2>Loading room...</h2>
+        </div>
+      </div>
+    )
   }
 
-  const orientation = color === 'b' ? 'black' : 'white'
-  const myTurn = state.turn === color && !state.isGameOver && !resignedBy
+  const orientation = mySeat === 'b' ? 'black' : 'white'
+  const myTurn = Boolean(state.turn === mySeat && !state.isGameOver && !resignedBy)
   const eloLine = eloResult
     ? `Elo: ${eloResult.prevElo} → ${eloResult.newElo} (${eloResult.delta > 0 ? '+' : ''}${eloResult.delta})`
     : null
 
-  const myName = color !== 'spectator' ? state.players[color]?.name : (user || 'Bạn')
-  const resultTitle = outcome === 'win' ? 'Bạn thắng!' : outcome === 'loss' ? 'Bạn thua' : outcome === 'draw' ? 'Hòa cờ' : 'Kết thúc ván'
-  const movesForReview = savedMoves || state.history
+  const myName = !isSpectator ? state.players[mySeat]?.name : (user || t('youIndicator'))
+  const resultTitle = outcome === 'win' ? t('youWon') : outcome === 'loss' ? t('youLost') : outcome === 'draw' ? t('drawMatch') : t('gameOver')
+  const movesForReview = (savedMoves && savedMoves.length > 0) ? savedMoves : (state?.history || [])
 
   return (
     <div className="game-page">
       <div className="panel">
-        <h3>Phòng {roomId}</h3>
+        <h3>{t('roomPrefix')} {roomId}</h3>
         <p className="muted">
-          Bạn:&nbsp;
-          {color === 'w' ? 'Trắng' : color === 'b' ? 'Đen' : 'Khán giả'}
-          {state.spectatorCount > 0 && ` · ${state.spectatorCount} khán giả`}
+          {t('youAre')}&nbsp;
+          {mySeat === 'w' ? t('whiteSeat') : mySeat === 'b' ? t('blackSeat') : t('spectatorSeat')}
+          {state.spectatorCount > 0 && ` · ${state.spectatorCount} ${t('spectatorsCount')}`}
         </p>
         {renderPlayerCard(oppSeat)}
         {renderPlayerCard(mySeat)}
         {!state.players.w || !state.players.b ? (
-          <p className="muted">Mã phòng: <strong>{roomId}</strong> — chia sẻ cho đối thủ</p>
+          <p className="muted">{t('shareRoomCodeTip')} <strong>{roomId}</strong> {t('shareRoomCodeSuffix')}</p>
         ) : null}
-        <button className="btn danger" onClick={resign} disabled={color === 'spectator' || state.isGameOver || !!resignedBy}>
-          Đầu hàng
+        <button
+          className="btn danger"
+          onClick={handleResign}
+          disabled={isSpectator || state.isGameOver || !!resignedBy}
+        >
+          {t('resign')}
         </button>
-        <button className="btn secondary" onClick={() => navigate('/online')}>Rời phòng</button>
+        <button className="btn secondary" onClick={handleLeaveRoom}>
+          {isMatchActive ? t('leaveRoomNeedResign') : t('leaveRoom')}
+        </button>
       </div>
 
       <Board
@@ -294,54 +536,255 @@ export default function OnlineGame() {
         onMove={onMove}
         orientation={orientation}
         disabled={!myTurn}
+        topBar={
+          <div className="board-player-strip">
+            <span className="board-player-info">
+              <PieceCircle color={oppSeat} size={13} />
+              <span className="board-player-name">{state?.players[oppSeat]?.name || t('waitingOpponentJoin')}</span>
+              {state?.players[oppSeat] && <span className="board-player-elo">({state?.players[oppSeat].elo})</span>}
+              <CapturedPieces game={game} color={oppSeat} size={14} />
+            </span>
+            {hasClock && state?.players[oppSeat] && (
+              <Clock
+                baseMs={state.clocks[oppSeat]}
+                running={state.clockRunning && state.turn === oppSeat}
+                since={state.receivedAt}
+              />
+            )}
+          </div>
+        }
+        bottomBar={
+          <div className="board-player-strip">
+            <span className="board-player-info">
+              <PieceCircle color={mySeat} size={13} />
+              <span className="board-player-name">{state?.players[mySeat]?.name || (user || 'Bạn')}</span>
+              {state?.players[mySeat] && <span className="board-player-elo">({state?.players[mySeat].elo})</span>}
+              <CapturedPieces game={game} color={mySeat} size={14} />
+            </span>
+            {hasClock && state?.players[mySeat] && (
+              <Clock
+                baseMs={state.clocks[mySeat]}
+                running={state.clockRunning && state.turn === mySeat}
+                since={state.receivedAt}
+              />
+            )}
+          </div>
+        }
       />
 
-      <div className="panel">
-        <h3>Trạng thái</h3>
-        <StatusBar
-          game={game}
-          extraText={
-            eloLine ? eloLine
-              : color === 'spectator' ? 'Bạn đang xem'
-              : myTurn ? 'Đến lượt bạn'
-              : resignedBy ? null
-              : 'Chờ đối thủ...'
-          }
-        />
-        <h3>Chat</h3>
-        <div className="chat-box">
-          {chat.length === 0 && <div className="muted">Chưa có tin nhắn</div>}
-          {chat.map((c, i) => (
-            <div key={i} className="chat-msg"><strong>{c.name}:</strong> {c.message}</div>
-          ))}
-          <div ref={chatEndRef} />
-        </div>
-        <form onSubmit={sendChat} className="row">
-          <input
-            className="select"
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            placeholder="Nhập tin nhắn..."
-          />
-          <button className="btn" type="submit" style={{ flex: 0 }}>Gửi</button>
-        </form>
-        <h3>Lịch sử</h3>
-        <MoveHistory history={state.history} />
-      </div>
+      <div className="panel game-side-panel">
+        {/* Tab Switcher: Chat & Move History */}
+        <div className="side-panel-tabs-bar">
+          <button
+            type="button"
+            className={`side-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('chat')
+              setUnreadCount(0)
+            }}
+          >
+            <MessageSquare size={14} />
+            <span>{t('chatTab')}</span>
+            {unreadCount > 0 && (
+              <span className="unread-badge">{unreadCount}</span>
+            )}
+          </button>
 
-      {/* Lời mời tái đấu từ đối thủ */}
-      {rematchState === 'received' && !showResult && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h2>Lời mời tái đấu</h2>
-            <p className="muted">Đối thủ muốn chơi lại với bạn</p>
-            <div className="row">
-              <button className="btn" onClick={acceptRematch}>Đồng ý</button>
-              <button className="btn secondary" onClick={declineRematch}>Từ chối</button>
-            </div>
-          </div>
+          <button
+            type="button"
+            className={`side-tab-btn ${activeTab === 'moves' ? 'active' : ''}`}
+            onClick={() => setActiveTab('moves')}
+          >
+            <ScrollText size={14} />
+            <span>{t('movesTab')}</span>
+            {game.history().length > 0 && (
+              <span className="moves-count-badge">{Math.ceil(game.history().length / 2)}</span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            className={`side-tab-btn tab-icon-only ${activeTab === 'split' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('split')
+              setUnreadCount(0)
+            }}
+            title={t('splitTab')}
+          >
+            <Columns size={14} />
+          </button>
         </div>
-      )}
+
+        {/* TAB: MOVES (shown when activeTab === 'moves' or 'split') */}
+        {(activeTab === 'moves' || activeTab === 'split') && (
+          <div className={`moves-tab-wrapper ${activeTab === 'split' ? 'split-mode' : ''}`}>
+            <div className="panel-sub-header">
+              <div className="sub-header-title">
+                <ScrollText size={14} className="text-amber" />
+                <span>{t('moveHistoryTitle')}</span>
+              </div>
+            </div>
+            <MoveHistory history={state?.history || game.history()} />
+          </div>
+        )}
+
+        {/* TAB: CHAT (shown when activeTab === 'chat' or 'split') */}
+        {(activeTab === 'chat' || activeTab === 'split') && (
+          <div className={`chat-tab-wrapper ${activeTab === 'split' ? 'split-mode' : ''}`}>
+            <div className="panel-sub-header">
+              <div className="sub-header-title">
+                <MessageSquare size={14} className="text-cyan" />
+                <span>{t('roomChatTitle')}</span>
+              </div>
+              <span className="online-room-indicator">
+                <span className="online-dot"></span>
+                <span>{t('onlineStatus')}</span>
+              </span>
+            </div>
+
+            <div className="chat-box-modern">
+              {chat.length === 0 ? (
+                <div className="chat-empty-state">
+                  <div className="chat-empty-icon-wrap">
+                    <MessageSquare size={24} className="text-cyan" />
+                  </div>
+                  <p className="chat-empty-title">{t('noMessagesInRoom')}</p>
+                  <p className="chat-empty-sub">{t('quickGreetingsPrompt')}</p>
+                  <div className="chat-empty-chips">
+                    <button
+                      type="button"
+                      className="quick-chip-btn"
+                      onClick={() => sendQuickChat(t('quickHello'))}
+                    >
+                      {t('quickHello')}
+                    </button>
+                    <button
+                      type="button"
+                      className="quick-chip-btn"
+                      onClick={() => sendQuickChat(t('quickGoodLuck'))}
+                    >
+                      {t('quickGoodLuck')}
+                    </button>
+                    <button
+                      type="button"
+                      className="quick-chip-btn"
+                      onClick={() => sendQuickChat(t('quickNiceMatch'))}
+                    >
+                      {t('quickNiceMatch')}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                chat.map((c, i) => {
+                  const isMe = c.name === user || (color !== 'spectator' && c.name === state?.players?.[mySeat]?.name)
+                  const formatTime = c.ts ? new Date(c.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+                  const senderColor = (c.name === state?.players?.w?.name || c.seat === 'w') ? 'w' : (c.name === state?.players?.b?.name || c.seat === 'b') ? 'b' : null
+
+                  return (
+                    <div
+                      key={i}
+                      className={`chat-message-item ${isMe ? 'message-mine' : 'message-theirs'}`}
+                    >
+                      {!isMe && (
+                        <div className="message-header-row">
+                          {senderColor && <PieceCircle color={senderColor} size={11} />}
+                          <span className="message-sender-name">{c.name}</span>
+                          {formatTime && <span className="message-time">{formatTime}</span>}
+                        </div>
+                      )}
+                      <div className="message-bubble">
+                        <span className="message-text">{c.message}</span>
+                        {isMe && formatTime && <span className="message-time-inline">{formatTime}</span>}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Quick Actions Bar */}
+            <div className="chat-quick-actions-bar">
+              <button type="button" className="quick-action-pill" onClick={() => sendQuickChat(t('quickHello'))}>
+                {t('quickHello')}
+              </button>
+              <button type="button" className="quick-action-pill" onClick={() => sendQuickChat(t('quickGoodLuck'))}>
+                {t('quickGoodLuck')}
+              </button>
+              <button type="button" className="quick-action-pill" onClick={() => sendQuickChat(t('quickNiceMove'))}>
+                {t('quickNiceMove')}
+              </button>
+              <button type="button" className="quick-action-pill" onClick={() => sendQuickChat(t('quickDrawOffer'))}>
+                {t('quickDrawOffer')}
+              </button>
+              <button type="button" className="quick-action-pill" onClick={() => sendQuickChat(t('quickTense'))}>
+                {t('quickTense')}
+              </button>
+              <button type="button" className="quick-action-pill" onClick={() => sendQuickChat('GG!')}>
+                GG!
+              </button>
+            </div>
+
+            {/* Emoji Drawer if toggled */}
+            {emojiOpen && (
+              <div className="chat-emoji-drawer">
+                {QUICK_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    className="emoji-btn"
+                    onClick={() => {
+                      setChatInput((prev) => prev + emoji)
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Chat Input Form */}
+            <form onSubmit={sendChat} className="chat-input-form-modern">
+              <button
+                type="button"
+                className={`btn-emoji-toggle ${emojiOpen ? 'active' : ''}`}
+                onClick={() => setEmojiOpen((v) => !v)}
+                title="Biểu tượng cảm xúc"
+              >
+                <Smile size={16} />
+              </button>
+              <div className="chat-input-wrapper">
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder={t('chatPlaceholder')}
+                  maxLength={200}
+                  className="chat-input-field-modern"
+                />
+                {chatInput && (
+                  <button
+                    type="button"
+                    className="chat-clear-btn"
+                    onClick={() => setChatInput('')}
+                    title="Xóa"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              <button
+                type="submit"
+                className="btn btn-chat-send-modern"
+                title={t('sendChatBtn')}
+                disabled={!chatInput.trim()}
+              >
+                <Send size={15} />
+                <span>{t('sendChatBtn')}</span>
+              </button>
+            </form>
+          </div>
+        )}
+      </div>
 
       <ResultModal
         open={showResult}
@@ -350,23 +793,26 @@ export default function OnlineGame() {
         playerName={myName}
         prevElo={eloResult?.prevElo}
         delta={eloResult?.delta}
-        onRematch={color !== 'spectator' ? (rematchState === 'received' ? acceptRematch : requestRematch) : null}
+        onRematch={!isSpectator ? (rematchState === 'received' ? acceptRematch : requestRematch) : null}
         rematchDisabled={rematchState === 'sent' || rematchState === 'declined'}
         rematchLabel={
-          rematchState === 'sent' ? 'Đã gửi lời mời...'
-          : rematchState === 'received' ? 'Đồng ý tái đấu'
-          : rematchState === 'declined' ? 'Đối thủ đã từ chối'
-          : 'Tái đấu'
+          rematchState === 'sent' ? t('rematchSent')
+          : rematchState === 'received' ? t('rematchReceived')
+          : rematchState === 'declined' ? t('rematchDeclined')
+          : t('rematchBtn')
         }
         onReview={movesForReview && movesForReview.length > 0 ? () => {
           navigate('/review', { state: {
             sanMoves: movesForReview,
-            whiteName: state.players.w?.name || 'Trắng',
-            blackName: state.players.b?.name || 'Đen',
-            myColor: color,
+            whiteName: state?.players?.w?.name || (mySeat === 'w' ? user : 'Opponent'),
+            blackName: state?.players?.b?.name || (mySeat === 'b' ? user : 'Opponent'),
+            myColor: mySeat,
           }})
         } : null}
-        onHome={() => navigate('/online')}
+        onHome={() => {
+          socket.emit('leave-room', { roomId })
+          navigate('/')
+        }}
       />
     </div>
   )

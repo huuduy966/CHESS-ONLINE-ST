@@ -4,3 +4,11 @@ dist/
 *.log
 .env
 .env.local
+
+# Executables & Binaries
+*.exe
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
