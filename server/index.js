@@ -2,11 +2,13 @@ import express from 'express'
 import http from 'http'
 import cors from 'cors'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
 import { Server } from 'socket.io'
 import { Chess } from 'chess.js'
 import { stockfishEngine } from './stockfish.js'
+import { chooseBestMove } from './ai.js'
 import {
   getUserByUsername,
   getUserProfile,
@@ -410,7 +412,24 @@ function maybeBotMove(roomId) {
         return
       }
 
-      // 2. Nếu Stockfish chưa kịp trả về, chọn nước đi hợp lệ đầu tiên của ván cờ
+      // 2. Nếu Stockfish chưa kịp trả về hoặc chưa khả dụng, dùng Minimax AI Engine
+      if (!move) {
+        try {
+          const difficulty = seat.elo >= 1600 ? 'hard' : seat.elo <= 1200 ? 'easy' : 'medium'
+          const aiMove = chooseBestMove(cur.game, difficulty)
+          if (aiMove) {
+            move = {
+              from: aiMove.from,
+              to: aiMove.to,
+              promotion: aiMove.promotion
+            }
+          }
+        } catch (err) {
+          console.warn('[maybeBotMove] AI fallback error:', err.message)
+        }
+      }
+
+      // 3. Dự phòng an toàn cuối cùng: chọn nước đi hợp lệ ngẫu nhiên
       if (!move) {
         const legalMoves = cur.game.moves({ verbose: true })
         if (legalMoves.length > 0) {
@@ -868,10 +887,9 @@ function resetRoomForRematch(roomId) {
 }
 
 // Serve client build nếu tồn tại
-import fs from 'fs'
 if (fs.existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST))
-  app.get(/^(?!\/socket\.io).*/, (_req, res) => {
+  app.get(/^(?!\/api|\/socket\.io).*/, (_req, res) => {
     res.sendFile(path.join(CLIENT_DIST, 'index.html'))
   })
 } else {

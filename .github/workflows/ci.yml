@@ -39,3 +39,4 @@ jobs:
         run: |
           node --check index.js
           node --check ai.js
+          node --check stockfish.js

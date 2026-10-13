@@ -3,9 +3,46 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { Chess } from 'chess.js'
+import { chooseBestMove, evaluate } from './ai.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const STOCKFISH_PATH = path.resolve(__dirname, '../stockfish/stockfish-windows-x86-64-universal.exe')
+
+export function resolveStockfishPath() {
+  if (process.env.STOCKFISH_PATH && fs.existsSync(process.env.STOCKFISH_PATH)) {
+    return process.env.STOCKFISH_PATH
+  }
+
+  const isWin = process.platform === 'win32'
+  const candidates = isWin
+    ? [
+        path.resolve(__dirname, '../stockfish/stockfish-windows-x86-64-universal.exe'),
+        path.resolve(__dirname, '../stockfish/stockfish.exe'),
+        path.resolve(__dirname, '../../stockfish/stockfish-windows-x86-64-universal.exe'),
+        path.resolve(__dirname, '../../stockfish/stockfish.exe')
+      ]
+    : [
+        path.resolve(__dirname, '../stockfish/stockfish-linux-x86-64-universal'),
+        path.resolve(__dirname, '../stockfish/stockfish'),
+        path.resolve(__dirname, '../../stockfish/stockfish-linux-x86-64-universal'),
+        path.resolve(__dirname, '../../stockfish/stockfish'),
+        '/usr/games/stockfish',
+        '/usr/local/bin/stockfish',
+        '/usr/bin/stockfish'
+      ]
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      if (!isWin) {
+        try {
+          fs.chmodSync(p, 0o755)
+        } catch {}
+      }
+      return p
+    }
+  }
+
+  return null
+}
 
 class StockfishManager {
   constructor() {
@@ -15,7 +52,8 @@ class StockfishManager {
     this.ready = false
     this.destroyed = false
     this.restartTimer = null
-    this.available = fs.existsSync(STOCKFISH_PATH)
+    this.binPath = resolveStockfishPath()
+    this.available = Boolean(this.binPath)
     this.initProcess()
 
     // Clean up process on exit so no orphan stockfish processes linger
@@ -26,10 +64,17 @@ class StockfishManager {
   }
 
   initProcess() {
-    if (this.destroyed || !this.available) return
+    if (this.destroyed) return
+
+    this.binPath = resolveStockfishPath()
+    this.available = Boolean(this.binPath)
+    if (!this.available) {
+      console.log('[Stockfish] Binary chưa được cấu hình. Máy chủ sẽ sử dụng Minimax AI Engine tích hợp sẵn.')
+      return
+    }
 
     try {
-      this.proc = spawn(STOCKFISH_PATH, [], {
+      this.proc = spawn(this.binPath, [], {
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe']
       })
@@ -207,20 +252,47 @@ class StockfishManager {
     }
   }
 
+  fallbackBestMove(fen, options = {}) {
+    try {
+      const chess = new Chess(fen)
+      const elo = Number(options.elo) || 1200
+      const difficulty = elo >= 1600 ? 'hard' : elo <= 1200 ? 'easy' : 'medium'
+      const aiMove = chooseBestMove(chess, difficulty)
+      if (aiMove) {
+        const uciMove = aiMove.from + aiMove.to + (aiMove.promotion || '')
+        const score = evaluate(chess)
+        const turn = chess.turn()
+        const whiteEval = turn === 'w' ? score : -score
+        return Promise.resolve({
+          bestmove: uciMove,
+          san: aiMove.san,
+          move: aiMove,
+          evalScore: whiteEval,
+          mate: null,
+          depth: 3,
+          engine: 'Minimax AI'
+        })
+      }
+    } catch (err) {
+      console.warn('[Stockfish] Fallback minimax error:', err.message)
+    }
+    return Promise.reject(new Error('No legal moves available'))
+  }
+
   getBestMove(fen, options = {}) {
-    if (!this.available || this.destroyed) {
-      return Promise.reject(new Error('Stockfish binary not available'))
+    if (!this.available || this.destroyed || !this.proc) {
+      return this.fallbackBestMove(fen, options)
     }
 
     return new Promise((resolve, reject) => {
       // Set safety timeout in case engine hangs
       const timeoutId = setTimeout(() => {
         if (this.current && this.current.resolve === resolve) {
-          console.warn('[Stockfish] Request timed out. Resetting current task.')
+          console.warn('[Stockfish] Request timed out. Resetting current task and falling back to Minimax AI.')
           this.proc?.stdin?.write('stop\n')
           this.current = null
-          reject(new Error('Stockfish timed out'))
           this.next()
+          this.fallbackBestMove(fen, options).then(resolve).catch(reject)
         }
       }, (options.movetime || 1500) + 3000)
 
@@ -248,6 +320,27 @@ class StockfishManager {
   }
 
   getEvaluation(fen, depth = 12, movetime = 300) {
+    if (!this.available || this.destroyed || !this.proc) {
+      try {
+        const chess = new Chess(fen)
+        const score = evaluate(chess)
+        const turn = chess.turn()
+        const whiteEval = turn === 'w' ? score : -score
+        const aiMove = chooseBestMove(chess, 'medium')
+        const uciMove = aiMove ? aiMove.from + aiMove.to + (aiMove.promotion || '') : '(none)'
+        return Promise.resolve({
+          bestmove: uciMove,
+          san: aiMove?.san || '',
+          move: aiMove,
+          evalScore: whiteEval,
+          mate: null,
+          depth: 3,
+          engine: 'Minimax AI'
+        })
+      } catch (err) {
+        return Promise.reject(err)
+      }
+    }
     return this.getBestMove(fen, { depth, movetime, skillLevel: 20 })
   }
 
@@ -256,9 +349,6 @@ class StockfishManager {
    * Tính toán nước hay nhất, đánh giá thế trận, độ mất centipawn (cpLoss) và độ chính xác (%)
    */
   async analyzeGame(sanMoves, options = {}) {
-    if (!this.available || this.destroyed) {
-      throw new Error('Stockfish binary not available')
-    }
     if (!Array.isArray(sanMoves) || sanMoves.length === 0) {
       return {
         ok: true,
@@ -268,7 +358,7 @@ class StockfishManager {
           w: { brilliant: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 },
           b: { brilliant: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 }
         },
-        engine: 'Stockfish 19'
+        engine: this.available ? 'Stockfish 19' : 'Minimax AI'
       }
     }
 
@@ -414,7 +504,7 @@ class StockfishManager {
       moves,
       accuracy,
       stats,
-      engine: 'Stockfish 19'
+      engine: this.available ? 'Stockfish 19' : 'Minimax AI'
     }
   }
 }

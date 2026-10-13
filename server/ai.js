@@ -72,7 +72,7 @@ function squareToIndex(sq) {
   return (8 - rank) * 8 + file
 }
 
-function evaluate(game) {
+export function evaluate(game) {
   if (game.isCheckmate()) return game.turn() === 'w' ? -100000 : 100000
   if (game.isDraw() || game.isStalemate()) return 0
 
