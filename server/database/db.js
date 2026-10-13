@@ -4,11 +4,12 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DB_PATH = path.resolve(__dirname, 'chess.db')
+const DB_PATH = process.env.DATABASE_PATH || path.resolve(__dirname, 'chess.db')
 
 // Đảm bảo thư mục tồn tại
-if (!fs.existsSync(__dirname)) {
-  fs.mkdirSync(__dirname, { recursive: true })
+const dbDir = path.dirname(DB_PATH)
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true })
 }
 
 // Khởi tạo database SQLite

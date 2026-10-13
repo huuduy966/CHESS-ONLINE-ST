@@ -7,6 +7,10 @@ dist/
 
 # Executables & Binaries
 *.exe
+stockfish/stockfish-linux-*
+stockfish/stockfish
+stockfish/*.tar.gz
+stockfish/*.zip
 
 # Database files
 *.db
