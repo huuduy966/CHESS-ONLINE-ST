@@ -2,6 +2,7 @@ import { Chessboard } from 'react-chessboard'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Chess } from 'chess.js'
 import { Zap } from 'lucide-react'
+import { BOARD_DARK, BOARD_LIGHT, LAST_MOVE_FROM, LAST_MOVE_TO } from '../utils/boardTheme.js'
 
 const EMPTY_ARROWS = []
 
@@ -74,16 +75,8 @@ export default function Board({
 
     // Hiển thị highlight nước đi gần nhất vừa hoàn thành
     if (lastMove && !hint) {
-      styles[lastMove.from] = {
-        backgroundColor: 'rgba(245, 158, 11, 0.2)',
-        boxShadow: 'inset 0 0 6px rgba(245, 158, 11, 0.35)',
-        borderRadius: '4px'
-      }
-      styles[lastMove.to] = {
-        backgroundColor: 'rgba(245, 158, 11, 0.32)',
-        boxShadow: 'inset 0 0 8px rgba(245, 158, 11, 0.5)',
-        borderRadius: '4px'
-      }
+      styles[lastMove.from] = LAST_MOVE_FROM
+      styles[lastMove.to] = LAST_MOVE_TO
     }
 
     // Hiệu ứng cảnh báo ô Vua khi bị chiếu
@@ -402,8 +395,8 @@ export default function Board({
           customSquareStyles={customSquareStyles}
           customArrows={boardArrows}
           customArrowColor="rgb(245, 158, 11)"
-          customDarkSquareStyle={{ backgroundColor: '#769656' }}
-          customLightSquareStyle={{ backgroundColor: '#eeeed2' }}
+          customDarkSquareStyle={BOARD_DARK}
+          customLightSquareStyle={BOARD_LIGHT}
           arePiecesDraggable={true}
           animationDuration={200}
         />

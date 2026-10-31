@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Chess } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
+import { BOARD_DARK, BOARD_LIGHT, LAST_MOVE_FROM, LAST_MOVE_TO } from '../utils/boardTheme.js'
 import {
   Play,
   Pause,
@@ -57,7 +58,7 @@ export default function AutoChaosBoard() {
   const { t, lang } = useLanguage()
   const gameRef = useRef(new Chess())
   const [fen, setFen] = useState(gameRef.current.fen())
-  const containerRef = useRef(null)
+  const boardStageRef = useRef(null)
   const [width, setWidth] = useState(380)
 
   // Live match states
@@ -78,12 +79,12 @@ export default function AutoChaosBoard() {
 
   // Auto-resize observer
   useEffect(() => {
-    const el = containerRef.current
+    const el = boardStageRef.current
     if (!el) return
     const update = () => {
       const clientW = el.clientWidth
       if (clientW > 0) {
-        setWidth(Math.min(480, Math.max(220, Math.floor(clientW - 24))))
+        setWidth(Math.min(480, Math.max(220, Math.floor(clientW - 16))))
       }
     }
     update()
@@ -190,14 +191,8 @@ export default function AutoChaosBoard() {
 
         // Highlight move squares
         setCustomSquareStyles({
-          [result.from]: {
-            backgroundColor: 'rgba(245, 158, 11, 0.45)',
-            boxShadow: 'inset 0 0 10px rgba(245, 158, 11, 0.6)'
-          },
-          [result.to]: {
-            backgroundColor: 'rgba(16, 185, 129, 0.55)',
-            boxShadow: 'inset 0 0 12px rgba(16, 185, 129, 0.8)'
-          }
+          [result.from]: LAST_MOVE_FROM,
+          [result.to]: LAST_MOVE_TO
         })
 
         // Status description
@@ -237,7 +232,7 @@ export default function AutoChaosBoard() {
   const currentTurn = gameRef.current ? gameRef.current.turn() : 'w'
 
   return (
-    <div className="auto-chaos-container" ref={containerRef}>
+    <div className="auto-chaos-container">
       {/* Live Match Header */}
       <div className="auto-chaos-header">
         <div className="auto-chaos-title-group">
@@ -262,14 +257,14 @@ export default function AutoChaosBoard() {
       </div>
 
       {/* Main Chessboard Frame */}
-      <div className="auto-board-stage">
+      <div className="auto-board-stage" ref={boardStageRef}>
         <div className="board-glow-backdrop"></div>
         <div className="board-surface-box">
           <Chessboard
             position={fen}
             arePiecesDraggable={false}
-            customDarkSquareStyle={{ backgroundColor: '#2f4858' }}
-            customLightSquareStyle={{ backgroundColor: '#e2e8f0' }}
+            customDarkSquareStyle={BOARD_DARK}
+            customLightSquareStyle={BOARD_LIGHT}
             customSquareStyles={customSquareStyles}
             boardWidth={width}
             animationDuration={Math.min(300, Math.floor(speed * 0.4))}

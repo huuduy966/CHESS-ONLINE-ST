@@ -14,7 +14,6 @@ import {
   Pause,
   RotateCw,
   Sparkles,
-  Trophy,
   Award,
   AlertTriangle,
   CheckCircle2,
@@ -22,13 +21,13 @@ import {
   HelpCircle,
   TrendingUp,
   Lightbulb,
-  Zap,
   Info,
   Fish
 } from 'lucide-react'
-import { analyzeGame, CLASS_LABEL, CLASS_COLOR, CLASSES } from '../utils/analysis.js'
+import { analyzeGame, CLASS_LABEL, CLASS_COLOR } from '../utils/analysis.js'
 import { PieceCircle } from '../components/PieceCircle.jsx'
 import { useLanguage } from '../utils/language.jsx'
+import { BOARD_DARK, BOARD_LIGHT, LAST_MOVE_FROM, LAST_MOVE_TO } from '../utils/boardTheme.js'
 
 const ORDER = ['brilliant', 'best', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder']
 
@@ -251,8 +250,6 @@ export default function Review() {
   // Highlight ô cờ của nước đi hiện tại (tô màu cả ô xuất phát và ô đích)
   const customSquareStyles = useMemo(() => {
     if (!currentMove) return {}
-    const cls = currentMove.classification
-    const color = CLASS_COLOR[cls] || '#f59e0b'
     let from = currentMove.from
     let to = currentMove.to
 
@@ -269,18 +266,8 @@ export default function Review() {
     }
 
     const styles = {}
-    if (from) {
-      styles[from] = {
-        backgroundColor: `${color}28`,
-        boxShadow: `inset 0 0 10px ${color}`
-      }
-    }
-    if (to) {
-      styles[to] = {
-        backgroundColor: `${color}45`,
-        boxShadow: `inset 0 0 14px ${color}`
-      }
-    }
+    if (from) styles[from] = LAST_MOVE_FROM
+    if (to) styles[to] = LAST_MOVE_TO
     return styles
   }, [currentMove])
 
@@ -352,7 +339,7 @@ export default function Review() {
           <h2>{t('reviewMainTitle')}</h2>
         </div>
 
-        <div className="review-header-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="review-header-actions">
           <button className="btn secondary btn-sm" onClick={() => navigate(-1)} type="button">
             <ArrowLeft size={16} />
             <span>{t('back')}</span>
@@ -423,7 +410,7 @@ export default function Review() {
       {/* Main Review Workspace */}
       <div className="review-workspace-grid">
         {/* Left Column: Classification Stats Breakdown */}
-        <div className="panel review-side-panel">
+        <aside className="panel review-side-panel review-insights-panel">
           <div className="panel-title-with-icon">
             <Award size={18} className="text-yellow" />
             <h3>{t('moveQualityTitle')}</h3>
@@ -451,10 +438,12 @@ export default function Review() {
               const hasMoves = countW > 0 || countB > 0
 
               return (
-                <div
+                <button
+                  type="button"
                   className={`stats-table-row ${hasMoves ? 'clickable-class-row' : ''}`}
                   key={cls}
                   onClick={() => hasMoves && jumpToClassification(cls)}
+                  disabled={!hasMoves}
                   title={hasMoves ? `${t('jumpToMove')} ${getClassLabel(cls, t)}` : ''}
                 >
                   <div className="stats-class-item">
@@ -469,52 +458,9 @@ export default function Review() {
                   <span className={`stats-count-cell count-b ${countB > 0 ? 'has-count' : 'zero-count'}`}>
                     {countB}
                   </span>
-                </div>
+                </button>
               )
             })}
-          </div>
-
-          {/* Dedicated Stockfish 19 Accuracy Evaluation Card */}
-          <div className="review-engine-accuracy-card">
-            <div className="engine-acc-header">
-              <div className="engine-acc-title">
-                <Fish size={14} className="text-cyan" />
-                <span>{t('sf19AccuracyTitle')}</span>
-              </div>
-              <span className="engine-acc-chip">NNUE</span>
-            </div>
-
-            <div className="engine-acc-bars-grid">
-              <div className="engine-acc-item">
-                <div className="engine-acc-label-row">
-                  <span className="acc-player-label">
-                    <PieceCircle color="white" size={12} /> {whiteName}
-                  </span>
-                  <strong className="acc-val-num">{accW}%</strong>
-                </div>
-                <div className="acc-mini-bar-track">
-                  <div
-                    className="acc-mini-bar-fill fill-w"
-                    style={{ width: `${accW}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="engine-acc-item">
-                <div className="engine-acc-label-row">
-                  <span className="acc-player-label">
-                    <PieceCircle color="black" size={12} /> {blackName}
-                  </span>
-                  <strong className="acc-val-num">{accB}%</strong>
-                </div>
-                <div className="acc-mini-bar-track">
-                  <div
-                    className="acc-mini-bar-fill fill-b"
-                    style={{ width: `${accB}%` }}
-                  ></div>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Quick Tips Box */}
@@ -527,7 +473,7 @@ export default function Review() {
               {t('controlTipsDesc')}
             </p>
           </div>
-        </div>
+        </aside>
 
         {/* Center Column: Interactive Chessboard & Coach Commentary */}
         <div className="review-center-stage">
@@ -562,8 +508,8 @@ export default function Review() {
                 arePiecesDraggable={false}
                 customSquareStyles={customSquareStyles}
                 customArrows={customArrows}
-                customDarkSquareStyle={{ backgroundColor: '#2f4858' }}
-                customLightSquareStyle={{ backgroundColor: '#e2e8f0' }}
+                customDarkSquareStyle={BOARD_DARK}
+                customLightSquareStyle={BOARD_LIGHT}
                 animationDuration={250}
               />
             </div>
@@ -676,7 +622,7 @@ export default function Review() {
         </div>
 
         {/* Right Column: Move List Notation (Score Sheet) */}
-        <div className="panel review-side-panel">
+        <aside className="panel review-side-panel review-moves-panel">
           <div className="panel-title-with-icon">
             <TrendingUp size={18} className="text-cyan" />
             <h3>{t('notationSheetTitle')}</h3>
@@ -748,7 +694,7 @@ export default function Review() {
               )}
             </div>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   )
