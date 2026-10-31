@@ -1,6 +1,6 @@
 // Minimax với alpha-beta pruning. Đánh giá vị trí bằng material + piece-square tables.
 
-const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 }
+export const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 }
 
 // Piece-square tables (góc nhìn của bên trắng; bên đen được mirror)
 const PST = {

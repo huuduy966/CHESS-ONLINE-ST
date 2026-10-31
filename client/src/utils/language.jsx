@@ -432,6 +432,7 @@ export const TRANSLATIONS = {
     whiteAdvantage: 'White favored',
     blackAdvantage: 'Black favored',
     equalAdvantage: 'Equal',
+    equalEval: 'Equal',
     whiteMates: 'White mates',
     blackMates: 'Black mates',
     getHintBtn: 'Stockfish 19 Hint',

@@ -3,7 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { Chess } from 'chess.js'
-import { chooseBestMove, evaluate } from './ai.js'
+import { chooseBestMove, evaluate, PIECE_VALUES } from './ai.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -287,6 +287,15 @@ class StockfishManager {
     return new Promise((resolve, reject) => {
       // Set safety timeout in case engine hangs
       const timeoutId = setTimeout(() => {
+        // 1. Nếu request vẫn đang nằm trong hàng đợi chờ xử lý -> gỡ bỏ và fallback
+        const queueIdx = this.queue.findIndex((item) => item.resolve === resolve)
+        if (queueIdx !== -1) {
+          this.queue.splice(queueIdx, 1)
+          this.fallbackBestMove(fen, options).then(resolve).catch(reject)
+          return
+        }
+
+        // 2. Nếu đang là tác vụ chạy trực tiếp trên engine
         if (this.current && this.current.resolve === resolve) {
           console.warn('[Stockfish] Request timed out. Resetting current task and falling back to Minimax AI.')
           this.proc?.stdin?.write('stop\n')
@@ -453,10 +462,20 @@ class StockfishManager {
       let classification = 'best'
       if (isExactBest || cpLoss <= 12 || winLoss < 1.5) {
         classification = 'best'
-        // Nước Thiên tài (Brilliant): Nước tối ưu có thí quân giá trị
-        const isPieceSacrifice = actual.captured && ['q', 'r', 'b', 'n'].includes(actual.piece)
-        if (isPieceSacrifice && cpLoss <= 5 && scoreAfterSide > 50) {
-          classification = 'brilliant'
+        // Nước Thiên tài (Brilliant): Nước tối ưu có thí quân giá trị thực tế
+        const isValuablePiece = ['q', 'r', 'b', 'n'].includes(actual.piece)
+        if (isValuablePiece && isExactBest && cpLoss <= 5 && scoreAfterSide >= 50) {
+          try {
+            const nextChess = new Chess(fens[i + 1])
+            const oppColor = turn === 'w' ? 'b' : 'w'
+            const isAttacked = nextChess.isAttacked(actual.to, oppColor)
+            const pieceVal = PIECE_VALUES[actual.piece] || 0
+            const capturedVal = actual.captured ? (PIECE_VALUES[actual.captured] || 0) : 0
+            // Thí quân: nước cờ đặt quân giá trị vào ô bị tấn công mà không đổi được quân tương đương
+            if (isAttacked && pieceVal > capturedVal + 50) {
+              classification = 'brilliant'
+            }
+          } catch {}
         }
       } else if (cpLoss <= 30 || winLoss < 4) {
         classification = 'excellent'
@@ -474,6 +493,8 @@ class StockfishManager {
 
       moves.push({
         ply: i,
+        from: actual.from,
+        to: actual.to,
         san: actual.san,
         turn,
         fenBefore: fens[i],

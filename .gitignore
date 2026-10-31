@@ -5,12 +5,11 @@ dist/
 .env
 .env.local
 
-# Executables & Binaries
+# Executables, Binaries & Stockfish C++ Source
 *.exe
-stockfish/stockfish-linux-*
-stockfish/stockfish
-stockfish/*.tar.gz
-stockfish/*.zip
+stockfish/*
+!stockfish/.gitkeep
+
 
 # Database files
 *.db

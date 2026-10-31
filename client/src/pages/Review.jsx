@@ -248,17 +248,59 @@ export default function Review() {
     [analysis, ply]
   )
 
-  // Highlight ô cờ của nước đi hiện tại
+  // Highlight ô cờ của nước đi hiện tại (tô màu cả ô xuất phát và ô đích)
   const customSquareStyles = useMemo(() => {
     if (!currentMove) return {}
     const cls = currentMove.classification
     const color = CLASS_COLOR[cls] || '#f59e0b'
-    return {
-      [currentMove.san]: {
-        backgroundColor: `${color}33`,
+    let from = currentMove.from
+    let to = currentMove.to
+
+    // Dự phòng tự động tính from/to nếu chưa có sẵn
+    if ((!from || !to) && currentMove.fenBefore && currentMove.san) {
+      try {
+        const temp = new Chess(currentMove.fenBefore)
+        const mv = temp.move(currentMove.san)
+        if (mv) {
+          from = mv.from
+          to = mv.to
+        }
+      } catch {}
+    }
+
+    const styles = {}
+    if (from) {
+      styles[from] = {
+        backgroundColor: `${color}28`,
         boxShadow: `inset 0 0 10px ${color}`
       }
     }
+    if (to) {
+      styles[to] = {
+        backgroundColor: `${color}45`,
+        boxShadow: `inset 0 0 14px ${color}`
+      }
+    }
+    return styles
+  }, [currentMove])
+
+  // Mũi tên chỉ nước đi tối ưu (Stockfish Best Move) khi người chơi đi nước chưa tốt
+  const customArrows = useMemo(() => {
+    if (!currentMove) return []
+    if (
+      ['inaccuracy', 'mistake', 'blunder'].includes(currentMove.classification) &&
+      currentMove.bestSAN &&
+      currentMove.bestSAN !== currentMove.san
+    ) {
+      try {
+        const temp = new Chess(currentMove.fenBefore)
+        const bestMv = temp.move(currentMove.bestSAN)
+        if (bestMv) {
+          return [[bestMv.from, bestMv.to, 'rgb(16, 185, 129)']]
+        }
+      } catch {}
+    }
+    return []
   }, [currentMove])
 
   if (!sanMoves || sanMoves.length === 0) {
@@ -519,6 +561,7 @@ export default function Review() {
                 boardOrientation={boardOrientation}
                 arePiecesDraggable={false}
                 customSquareStyles={customSquareStyles}
+                customArrows={customArrows}
                 customDarkSquareStyle={{ backgroundColor: '#2f4858' }}
                 customLightSquareStyle={{ backgroundColor: '#e2e8f0' }}
                 animationDuration={250}

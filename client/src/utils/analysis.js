@@ -65,6 +65,8 @@ export async function analyzeGame(sanMoves, options = {}) {
       if (!actual) break
       moves.push({
         ply: i,
+        from: actual.from,
+        to: actual.to,
         san: actual.san,
         turn,
         fenBefore,

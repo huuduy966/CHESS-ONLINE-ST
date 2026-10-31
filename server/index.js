@@ -41,12 +41,16 @@ function freePort(port) {
       for (const line of lines) {
         if (line.includes('LISTENING') || line.includes('Listen')) {
           const parts = line.trim().split(/\s+/)
-          const pid = parseInt(parts[parts.length - 1], 10)
-          if (pid && pid !== process.pid && pid > 0) {
-            console.log(`[Server] Cổng ${port} đang bị chiếm bởi PID ${pid}. Đang giải phóng...`)
-            try {
-              execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' })
-            } catch {}
+          const localAddr = parts[1] || ''
+          // Kiểm tra chính xác đuôi port để tránh match nhầm các cổng như 30010, 30015
+          if (localAddr.endsWith(`:${port}`)) {
+            const pid = parseInt(parts[parts.length - 1], 10)
+            if (pid && pid !== process.pid && pid > 0) {
+              console.log(`[Server] Cổng ${port} đang bị chiếm bởi PID ${pid}. Đang giải phóng...`)
+              try {
+                execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' })
+              } catch {}
+            }
           }
         }
       }
@@ -509,8 +513,8 @@ function createMatchedRoom(p1, p2) {
     ended: false,
     tc,
     clocks: { w: tc.initialMs, b: tc.initialMs },
-    lastMoveAt: 0,
-    clockStarted: false,
+    lastMoveAt: Date.now(),
+    clockStarted: true,
   })
   io.sockets.sockets.get(w.id)?.join(roomId)
   io.sockets.sockets.get(b.id)?.join(roomId)
@@ -538,8 +542,8 @@ function createBotMatch(player) {
     botThinking: false,
     tc,
     clocks: { w: tc.initialMs, b: tc.initialMs },
-    lastMoveAt: 0,
-    clockStarted: false,
+    lastMoveAt: Date.now(),
+    clockStarted: true,
   })
   io.sockets.sockets.get(player.id)?.join(roomId)
   const myColor = w.id === player.id ? 'w' : 'b'
@@ -562,6 +566,7 @@ setInterval(() => {
     const range = Math.min(800, 100 + Math.floor(waited / 1000) * 50)
     for (let j = i + 1; j < queue.length; j++) {
       const b = queue[j]
+      if (!io.sockets.sockets.get(b.id)) { queue.splice(j, 1); j--; continue }
       if (tcKey(a.tc) !== tcKey(b.tc)) continue
       if (Math.abs(a.elo - b.elo) <= range) {
         queue.splice(j, 1); queue.splice(i, 1)
@@ -690,6 +695,11 @@ io.on('connection', (socket) => {
     } else {
       r.spectators.add(socket.id)
       color = 'spectator'
+    }
+    // Khi cả 2 kỳ thủ đã vào phòng, khởi động đồng hồ nếu chưa chạy
+    if (r.players.w && r.players.b && !r.clockStarted && !r.ended) {
+      r.clockStarted = true
+      r.lastMoveAt = Date.now()
     }
     joined = { roomId, color }
     const st = roomState(roomId)
@@ -856,19 +866,31 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     queue = queue.filter(q => q.id !== socket.id)
-    if (!joined) return
-    const r = rooms.get(joined.roomId)
-    if (!r) return
-    const seat = r.players.w?.id === socket.id ? 'w' : r.players.b?.id === socket.id ? 'b' : null
-    if (seat && !r.ended && (r.players.w && r.players.b)) {
-      emitResult(joined.roomId, seat === 'w' ? 'white_resign' : 'black_resign')
+
+    // Quét toàn bộ phòng để dọn dẹp và xử lý ván đấu nếu socket bị rớt mạng bất ngờ
+    for (const [roomId, r] of rooms) {
+      const isPlayerW = r.players.w?.id === socket.id
+      const isPlayerB = r.players.b?.id === socket.id
+      const isSpectator = r.spectators.has(socket.id)
+      if (!isPlayerW && !isPlayerB && !isSpectator) continue
+
+      const seat = isPlayerW ? 'w' : isPlayerB ? 'b' : null
+      if (seat && !r.ended && (r.players.w && r.players.b)) {
+        emitResult(roomId, seat === 'w' ? 'white_resign' : 'black_resign')
+      }
+
+      if (isPlayerW) r.players.w = null
+      else if (isPlayerB) r.players.b = null
+      else r.spectators.delete(socket.id)
+
+      const remainingHuman = (r.players.w && !r.players.w.isBot) || (r.players.b && !r.players.b.isBot)
+      if (!remainingHuman && r.spectators.size === 0) {
+        rooms.delete(roomId)
+      } else {
+        broadcast(roomId)
+      }
     }
-    if (r.players.w?.id === socket.id) r.players.w = null
-    else if (r.players.b?.id === socket.id) r.players.b = null
-    else r.spectators.delete(socket.id)
-    const remainingHuman = (r.players.w && !r.players.w.isBot) || (r.players.b && !r.players.b.isBot)
-    if (!remainingHuman && r.spectators.size === 0) rooms.delete(joined.roomId)
-    else broadcast(joined.roomId)
+    joined = null
   })
 })
 
@@ -882,8 +904,8 @@ function resetRoomForRematch(roomId) {
   r.players.w = r.players.b
   r.players.b = tmp
   r.clocks = { w: r.tc.initialMs, b: r.tc.initialMs }
-  r.lastMoveAt = 0
-  r.clockStarted = false
+  r.lastMoveAt = Date.now()
+  r.clockStarted = true
 }
 
 // Serve client build nếu tồn tại

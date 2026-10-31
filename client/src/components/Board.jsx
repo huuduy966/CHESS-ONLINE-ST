@@ -27,6 +27,36 @@ export default function Board({
   const myColor = orientation === 'black' ? 'b' : 'w'
   const isMyTurn = !disabled && (mode === 'local' ? true : game.turn() === myColor)
 
+  // Tìm ô của Vua đang bị chiếu để tạo hiệu ứng cảnh báo đỏ neon
+  const kingCheckSquare = useMemo(() => {
+    if (!game || !game.inCheck()) return null
+    try {
+      const turn = game.turn()
+      const board = game.board()
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const piece = board[r][c]
+          if (piece && piece.type === 'k' && piece.color === turn) {
+            const file = String.fromCharCode(97 + c)
+            const rank = 8 - r
+            return `${file}${rank}`
+          }
+        }
+      }
+    } catch {}
+    return null
+  }, [game.fen()])
+
+  // Lấy nước đi gần nhất vừa đi để highlight nhẹ
+  const lastMove = useMemo(() => {
+    try {
+      const history = game.history({ verbose: true })
+      return history.length > 0 ? history[history.length - 1] : null
+    } catch {
+      return null
+    }
+  }, [game.fen()])
+
   // Mũi tên chỉ nước đi gợi ý từ Stockfish
   const boardArrows = useMemo(() => {
     if (Array.isArray(customArrows)) {
@@ -41,6 +71,29 @@ export default function Board({
   // Style highlight các ô: kết hợp gợi ý từ Stockfish và tùy chọn nước đi
   const customSquareStyles = useMemo(() => {
     const styles = {}
+
+    // Hiển thị highlight nước đi gần nhất vừa hoàn thành
+    if (lastMove && !hint) {
+      styles[lastMove.from] = {
+        backgroundColor: 'rgba(245, 158, 11, 0.2)',
+        boxShadow: 'inset 0 0 6px rgba(245, 158, 11, 0.35)',
+        borderRadius: '4px'
+      }
+      styles[lastMove.to] = {
+        backgroundColor: 'rgba(245, 158, 11, 0.32)',
+        boxShadow: 'inset 0 0 8px rgba(245, 158, 11, 0.5)',
+        borderRadius: '4px'
+      }
+    }
+
+    // Hiệu ứng cảnh báo ô Vua khi bị chiếu
+    if (kingCheckSquare) {
+      styles[kingCheckSquare] = {
+        background: 'radial-gradient(circle, rgba(239, 68, 68, 0.9) 0%, rgba(220, 38, 38, 0.5) 60%, transparent 95%)',
+        borderRadius: '50%',
+        boxShadow: '0 0 16px rgba(239, 68, 68, 0.9), inset 0 0 10px rgba(239, 68, 68, 0.95)'
+      }
+    }
 
     // Hiển thị ô xuất phát và ô đích của nước đi gợi ý từ Stockfish
     if (hint && hint.from && hint.to) {
@@ -65,7 +118,7 @@ export default function Board({
     })
 
     return styles
-  }, [optionSquares, hint])
+  }, [optionSquares, hint, lastMove, kingCheckSquare])
 
   const highlightPremoves = useCallback((queue) => {
     const newSquares = {}

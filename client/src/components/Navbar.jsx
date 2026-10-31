@@ -18,6 +18,7 @@ import {
   Globe
 } from 'lucide-react'
 import LanguageToggle from './LanguageToggle.jsx'
+import SoundToggle from './SoundToggle.jsx'
 import { useAuth } from '../utils/auth.jsx'
 import { useTheme } from '../utils/theme.jsx'
 import { useGameLock } from '../utils/gameLock.jsx'
@@ -98,9 +99,10 @@ export default function Navbar() {
 
         {/* Right Section: Profile, Login, Register, Utilities */}
         <div className="nav-right">
-          {/* Language & Theme */}
+          {/* Language, Sound & Theme */}
           <div className="nav-utils">
             <LanguageToggle />
+            <SoundToggle />
             <button
               className="theme-toggle"
               onClick={toggle}

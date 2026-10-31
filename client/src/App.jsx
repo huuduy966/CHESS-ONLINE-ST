@@ -30,17 +30,19 @@ export default function App() {
       )}
 
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/local" element={<LocalGame />} />
-          <Route path="/ai" element={<AIGame />} />
-          <Route path="/online" element={<OnlineLobby />} />
-          <Route path="/online/:roomId" element={<OnlineGame />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/review" element={<Review />} />
-        </Routes>
+        <div key={location.pathname} className="route-page-container">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/local" element={<LocalGame />} />
+            <Route path="/ai" element={<AIGame />} />
+            <Route path="/online" element={<OnlineLobby />} />
+            <Route path="/online/:roomId" element={<OnlineGame />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/review" element={<Review />} />
+          </Routes>
+        </div>
       </main>
     </div>
   )

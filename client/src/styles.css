@@ -5941,3 +5941,410 @@ body.searching-match .back-btn {
   }
 }
 
+
+/* =========================================================
+   SYSTEM-WIDE ANIMATIONS & POLISH SUITE (VIBE & FLUID MOTION)
+========================================================= */
+
+/* 1. Global Page Route Transitions */
+.route-page-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  animation: pageSlideFade 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes pageSlideFade {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 2. Ambient Floating Background Orbs */
+.bg-glow-left {
+  animation: floatGlowLeft 14s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.bg-glow-right {
+  animation: floatGlowRight 16s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes floatGlowLeft {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.15;
+  }
+  50% {
+    transform: translate3d(30px, 25px, 0) scale(1.15);
+    opacity: 0.22;
+  }
+  100% {
+    transform: translate3d(-20px, 40px, 0) scale(0.95);
+    opacity: 0.16;
+  }
+}
+
+@keyframes floatGlowRight {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.14;
+  }
+  50% {
+    transform: translate3d(-35px, 30px, 0) scale(1.12);
+    opacity: 0.2;
+  }
+  100% {
+    transform: translate3d(25px, -20px, 0) scale(0.98);
+    opacity: 0.15;
+  }
+}
+
+/* 3. Hero Aurora Shimmer Animation */
+.hero-title-gradient {
+  background-size: 200% auto;
+  animation: auroraShimmer 5s ease-in-out infinite alternate;
+}
+
+@keyframes auroraShimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+/* 4. Bento Game Mode Cards Elevation & Glow */
+.mode-bento-card {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s ease;
+}
+
+.mode-bento-card:hover {
+  transform: translateY(-5px) scale(1.008);
+}
+
+.mode-bento-card:active {
+  transform: translateY(-2px) scale(0.995);
+}
+
+.mode-bento-card:hover .mode-icon-wrapper {
+  transform: scale(1.12) rotate(-3deg);
+}
+
+/* 5. Interactive Buttons & Controls Micro-interactions */
+.btn {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.18s ease,
+              background-color 0.18s ease,
+              border-color 0.18s ease,
+              color 0.18s ease;
+  will-change: transform;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn:active {
+  transform: translateY(1px) scale(0.97);
+}
+
+.theme-toggle,
+.lang-toggle {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.2s ease,
+              border-color 0.2s ease,
+              box-shadow 0.2s ease;
+  will-change: transform;
+}
+
+.theme-toggle:hover,
+.lang-toggle:hover {
+  transform: translateY(-2px) scale(1.06);
+}
+
+.theme-toggle:active,
+.lang-toggle:active {
+  transform: translateY(1px) scale(0.94);
+}
+
+.theme-toggle svg {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.theme-toggle:hover svg {
+  transform: rotate(25deg);
+}
+
+/* 6. Chessboard Live Glow & Status */
+.board-surface-box,
+.auto-board-stage {
+  transition: box-shadow 0.35s ease;
+}
+
+.board-surface-box:hover {
+  box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.65), 0 0 25px rgba(245, 158, 11, 0.12);
+}
+
+/* King In Check Pulse Animation */
+@keyframes kingCheckPulse {
+  0%, 100% {
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.95), inset 0 0 10px rgba(239, 68, 68, 0.9);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(239, 68, 68, 1), inset 0 0 16px rgba(239, 68, 68, 1);
+    transform: scale(1.03);
+  }
+}
+
+/* Last Move Pulse Animation */
+@keyframes pulseLastMove {
+  0%, 100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Premove Glow Pulse Animation */
+@keyframes premovePulse {
+  0%, 100% {
+    box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.75), 0 0 6px rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    box-shadow: inset 0 0 16px rgba(239, 68, 68, 0.95), 0 0 12px rgba(239, 68, 68, 0.8);
+  }
+}
+
+/* Legal Move Dot Scale Pop */
+@keyframes moveDotPop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Turn Pulse Dot in Status Bar */
+.turn-pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: turnRadarPulse 1.8s infinite cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes turnRadarPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.8);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+/* 7. Enhanced Time Control Clock Countdown */
+.clock {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.clock-low {
+  color: #f59e0b !important;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  animation: clockLowPulse 1.2s infinite ease-in-out;
+}
+
+@keyframes clockLowPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+  }
+  50% {
+    transform: scale(1.03);
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
+  }
+}
+
+.clock-critical {
+  color: #ef4444 !important;
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  animation: clockCriticalBeat 0.55s infinite cubic-bezier(0.36, 0.07, 0.19, 0.97) !important;
+}
+
+@keyframes clockCriticalBeat {
+  0%, 100% {
+    transform: scale(1);
+    background: rgba(239, 68, 68, 0.12);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+  }
+  50% {
+    transform: scale(1.08);
+    background: rgba(239, 68, 68, 0.28);
+    box-shadow: 0 0 22px rgba(239, 68, 68, 0.85);
+  }
+}
+
+/* 8. Spring Pop-in Modals & Rotating Victory Aura */
+.modal-overlay {
+  animation: modalOverlayFade 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@keyframes modalOverlayFade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.modern-result-modal,
+.lock-warning-modal,
+.modal {
+  animation: modalSpringIn 0.36s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes modalSpringIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.86) translateY(24px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.result-glow-aura {
+  animation: rotatingAura 14s linear infinite;
+}
+
+@keyframes rotatingAura {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.elo-delta-tag {
+  animation: ratingDeltaPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes ratingDeltaPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) translateY(6px);
+  }
+  75% {
+    transform: scale(1.18) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 9. Online Chat Bubbles Smooth Entrance */
+.chat-message-item {
+  animation: chatBubbleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes chatBubbleIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.quick-action-pill,
+.quick-chip-btn {
+  transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.16s ease,
+              box-shadow 0.16s ease;
+}
+
+.quick-action-pill:hover,
+.quick-chip-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.quick-action-pill:active,
+.quick-chip-btn:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+/* 10. AutoChaosBoard Live Ticker Pop */
+.live-move-ticker {
+  animation: liveTickerPop 0.24s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes liveTickerPop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.88);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 11. Review & Analysis Coach Card Transitions */
+.coach-commentary-card {
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: commentaryFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes commentaryFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.eval-fill {
+  transition: width 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.clickable-class-row {
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.clickable-class-row:hover {
+  transform: translateX(4px);
+}
