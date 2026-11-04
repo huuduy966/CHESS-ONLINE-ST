@@ -8,6 +8,7 @@ import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import Profile from './pages/Profile.jsx'
 import Review from './pages/Review.jsx'
+import Admin from './pages/Admin.jsx'
 import Navbar from './components/Navbar.jsx'
 import BackButton from './components/BackButton.jsx'
 import { useGameLock } from './utils/gameLock.jsx'
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/review" element={<Review />} />
+            <Route path="/admin" element={<Admin />} />
           </Routes>
         </div>
       </main>

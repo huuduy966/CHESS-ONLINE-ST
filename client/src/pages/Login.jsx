@@ -35,8 +35,8 @@ export default function Login() {
         return setError(data.error || 'Sai tên đăng nhập hoặc mật khẩu')
       }
 
-      login(data.user || u)
-      navigate('/')
+      login(data.user || u, data.adminToken)
+      navigate(data.adminToken ? '/admin' : '/')
     } catch (err) {
       setError('Không thể kết nối đến máy chủ: ' + err.message)
     }

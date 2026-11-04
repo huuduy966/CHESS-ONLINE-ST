@@ -27,6 +27,10 @@ npm run dev
 
 Mở `http://localhost:5173` trong trình duyệt.
 
+### Quản trị
+
+Đặt biến môi trường `ADMIN_PASSWORD` trên server rồi khởi động lại. Server sẽ tạo tài khoản `admin` nếu chưa có, hoặc cấp quyền quản trị cho tài khoản `admin` hiện có khi mật khẩu khớp. Đăng nhập và mở `/admin` để xem, xóa tài khoản thường hoặc đóng phòng chơi. Mật khẩu không được lưu trong mã nguồn. Với dịch vụ Render đã tồn tại, thêm `ADMIN_PASSWORD` trực tiếp trong mục **Environment**; `sync: false` trong `render.yaml` chỉ nhắc nhập giá trị khi tạo Blueprint lần đầu.
+
 - Client dev server: `http://localhost:5173`
 - Game server: `http://localhost:3001`
 

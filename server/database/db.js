@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DB_PATH = process.env.DATABASE_PATH || path.resolve(__dirname, 'chess.db')
@@ -53,6 +54,24 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_games_user_id ON games(user_id);
   CREATE INDEX IF NOT EXISTS idx_games_created_at ON games(created_at DESC);
 `)
+
+if (!db.pragma('table_info(users)').some(column => column.name === 'role')) {
+  db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+}
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex')
+  return `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`
+}
+
+export function verifyPassword(user, password) {
+  if (typeof password !== 'string') return false
+  if (!user.password.startsWith('scrypt:')) return user.password === password
+  const [, salt, stored] = user.password.split(':')
+  const actual = scryptSync(password, salt, 64)
+  const expected = Buffer.from(stored, 'hex')
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
 
 console.log(`[SQLite Database] Đã khởi tạo và kết nối thành công file cơ sở dữ liệu: ${DB_PATH}`)
 
@@ -132,10 +151,11 @@ export function getUserById(id) {
 
 export function createUser(username, password) {
   const cleanUsername = username.trim()
-  const info = stmtInsertUser.run(cleanUsername, password)
+  const info = stmtInsertUser.run(cleanUsername, hashPassword(password))
   return {
     id: info.lastInsertRowid,
     username: cleanUsername,
+    role: 'user',
     elo: 1200,
     wins: 0,
     losses: 0,
@@ -152,6 +172,7 @@ export function getUserProfile(username) {
   return {
     id: user.id,
     username: user.username,
+    role: user.role,
     elo: user.elo,
     wins: user.wins,
     losses: user.losses,
@@ -159,6 +180,29 @@ export function getUserProfile(username) {
     createdAt: user.created_at,
     history
   }
+}
+
+export function bootstrapAdmin(password) {
+  if (!password) return false
+  const user = getUserByUsername('admin')
+  if (user) {
+    if (!verifyPassword(user, password)) throw new Error('Tài khoản admin hiện có dùng mật khẩu khác ADMIN_PASSWORD')
+    db.prepare("UPDATE users SET role = 'admin', password = ? WHERE id = ?").run(hashPassword(password), user.id)
+  } else {
+    stmtInsertUser.run('admin', hashPassword(password))
+    db.prepare("UPDATE users SET role = 'admin' WHERE username = 'admin'").run()
+  }
+  return true
+}
+
+export function listUsers() {
+  return db.prepare('SELECT id, username, role, elo, wins, losses, draws, created_at AS createdAt FROM users ORDER BY id DESC').all()
+}
+
+export function deleteUser(id) {
+  const user = getUserById(id)
+  if (!user || user.role === 'admin') return false
+  return db.prepare('DELETE FROM users WHERE id = ?').run(id).changes === 1
 }
 
 export function getLeaderboard(limit = 20) {

@@ -40,3 +40,6 @@ jobs:
           node --check index.js
           node --check ai.js
           node --check stockfish.js
+      - name: Test admin permissions
+        working-directory: server
+        run: npm test

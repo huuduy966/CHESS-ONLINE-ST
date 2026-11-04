@@ -310,6 +310,10 @@ export default function OnlineGame() {
       })
     }
     const onRematchDeclined = () => setRematchState('declined')
+    const onRoomClosed = () => {
+      setState((current) => current ? { ...current, ended: true } : current)
+      setError('Phòng đã được quản trị viên đóng')
+    }
 
     socket.on('state', onState)
     socket.on('chat', onChat)
@@ -318,6 +322,7 @@ export default function OnlineGame() {
     socket.on('rematch-offer', onRematchOffer)
     socket.on('rematch-accepted', onRematchAccepted)
     socket.on('rematch-declined', onRematchDeclined)
+    socket.on('room-closed', onRoomClosed)
 
     return () => {
       socket.off('state', onState)
@@ -327,6 +332,7 @@ export default function OnlineGame() {
       socket.off('rematch-offer', onRematchOffer)
       socket.off('rematch-accepted', onRematchAccepted)
       socket.off('rematch-declined', onRematchDeclined)
+      socket.off('room-closed', onRoomClosed)
     }
   }, [roomId, user, profile?.elo, recordGame, updateLastGameMoves])
 

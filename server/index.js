@@ -5,14 +5,20 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
+import { randomBytes } from 'crypto'
 import { Server } from 'socket.io'
 import { Chess } from 'chess.js'
 import { stockfishEngine } from './stockfish.js'
 import { chooseBestMove } from './ai.js'
 import {
   getUserByUsername,
+  getUserById,
   getUserProfile,
   createUser,
+  verifyPassword,
+  bootstrapAdmin,
+  listUsers,
+  deleteUser,
   recordGameTransaction,
   updateLatestGameMoves,
   getLeaderboard
@@ -28,6 +34,20 @@ const server = http.createServer(app)
 const io = new Server(server, { cors: { origin: '*' } })
 
 const PORT = process.env.PORT || 3001
+const adminSessions = new Map()
+const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000
+
+if (process.env.ADMIN_PASSWORD) bootstrapAdmin(process.env.ADMIN_PASSWORD)
+
+function requireAdmin(req, res, next) {
+  const token = req.get('Authorization')?.match(/^Bearer ([a-f0-9]{64})$/)?.[1]
+  const session = token && adminSessions.get(token)
+  if (!session || session.expiresAt < Date.now() || getUserById(session.userId)?.role !== 'admin') {
+    return res.status(403).json({ ok: false, error: 'Bạn cần đăng nhập bằng tài khoản quản trị' })
+  }
+  req.adminToken = token
+  next()
+}
 
 // Tự động giải phóng cổng nếu có tiến trình zombie cũ đang chiếm giữ
 function freePort(port) {
@@ -65,12 +85,15 @@ function freePort(port) {
 // 1. API Đăng ký tài khoản
 app.post('/api/auth/register', (req, res) => {
   const { username, password } = req.body
-  const u = username ? username.trim() : ''
-  if (!u || !password) {
+  const u = typeof username === 'string' ? username.trim() : ''
+  if (!u || typeof password !== 'string' || !password) {
     return res.status(400).json({ ok: false, error: 'Vui lòng nhập đủ thông tin' })
   }
   if (u.length < 3) {
     return res.status(400).json({ ok: false, error: 'Tên đăng nhập tối thiểu 3 ký tự' })
+  }
+  if (u.toLowerCase() === 'admin') {
+    return res.status(400).json({ ok: false, error: 'Tên đăng nhập này được dành cho quản trị viên' })
   }
   if (password.length < 4) {
     return res.status(400).json({ ok: false, error: 'Mật khẩu tối thiểu 4 ký tự' })
@@ -93,8 +116,8 @@ app.post('/api/auth/register', (req, res) => {
 // 2. API Đăng nhập
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body
-  const u = username ? username.trim() : ''
-  if (!u || !password) {
+  const u = typeof username === 'string' ? username.trim() : ''
+  if (!u || typeof password !== 'string' || !password) {
     return res.status(400).json({ ok: false, error: 'Vui lòng nhập đủ thông tin' })
   }
 
@@ -104,12 +127,14 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(400).json({ ok: false, error: 'Tài khoản không tồn tại' })
     }
 
-    if (user.password !== password) {
+    if (!verifyPassword(user, password)) {
       return res.status(400).json({ ok: false, error: 'Sai mật khẩu' })
     }
 
     const profile = getUserProfile(u)
-    res.json({ ok: true, user: profile })
+    const adminToken = user.role === 'admin' ? randomBytes(32).toString('hex') : null
+    if (adminToken) adminSessions.set(adminToken, { userId: user.id, expiresAt: Date.now() + ADMIN_SESSION_MS })
+    res.json({ ok: true, user: profile, adminToken })
   } catch (err) {
     console.error('[API Login Error]:', err)
     res.status(500).json({ ok: false, error: 'Lỗi server khi đăng nhập: ' + err.message })
@@ -259,6 +284,49 @@ function tcKey(tc) { return `${tc.initialMs}_${tc.incrementMs}` }
 // roomId -> { game, players, spectators, ended, tc, clocks: {w,b}, lastMoveAt, clockStarted }
 const rooms = new Map()
 let queue = [] // [{ id, name, elo, tc, joinedAt }]
+
+app.get('/api/admin/users', requireAdmin, (_req, res) => {
+  res.json({ ok: true, users: listUsers() })
+})
+
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  const id = Number(req.params.id)
+  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ ok: false, error: 'ID không hợp lệ' })
+  const user = getUserById(id)
+  if (!user) return res.status(404).json({ ok: false, error: 'Không tìm thấy tài khoản' })
+  if (user.role === 'admin') return res.status(403).json({ ok: false, error: 'Không thể xóa tài khoản quản trị' })
+  if (queue.some(player => player.name === user.username) ||
+    [...rooms.values()].some(room => Object.values(room.players).some(player => player?.name === user.username))) {
+    return res.status(409).json({ ok: false, error: 'Tài khoản đang ở trong phòng chơi' })
+  }
+  deleteUser(id)
+  res.json({ ok: true })
+})
+
+app.get('/api/admin/rooms', requireAdmin, (_req, res) => {
+  res.json({ ok: true, rooms: [...rooms].map(([roomId, room]) => ({
+    roomId,
+    white: room.players.w?.name || null,
+    black: room.players.b?.name || null,
+    spectators: room.spectators.size,
+    moves: room.game.history().length,
+    ended: room.ended
+  })) })
+})
+
+app.delete('/api/admin/rooms/:roomId', requireAdmin, (req, res) => {
+  const roomId = req.params.roomId.toUpperCase()
+  if (!rooms.has(roomId)) return res.status(404).json({ ok: false, error: 'Phòng không tồn tại' })
+  io.to(roomId).emit('room-closed')
+  io.in(roomId).socketsLeave(roomId)
+  rooms.delete(roomId)
+  res.json({ ok: true })
+})
+
+app.post('/api/admin/logout', requireAdmin, (req, res) => {
+  adminSessions.delete(req.adminToken)
+  res.json({ ok: true })
+})
 const QUEUE_TIMEOUT_MS = 10000
 const TICK_MS = 1000
 const CLOCK_TICK_MS = 250

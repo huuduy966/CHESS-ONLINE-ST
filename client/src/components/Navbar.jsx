@@ -4,7 +4,8 @@ import {
   LogIn,
   UserPlus,
   LogOut,
-  Trophy
+  Trophy,
+  Shield
 } from 'lucide-react'
 import LanguageToggle from './LanguageToggle.jsx'
 import SoundToggle from './SoundToggle.jsx'
@@ -13,7 +14,7 @@ import { useGameLock } from '../utils/gameLock.jsx'
 import { useLanguage } from '../utils/language.jsx'
 
 export default function Navbar() {
-  const { user, profile, logout } = useAuth()
+  const { user, profile, adminToken, logout } = useAuth()
   const { isGameLocked, requestNavigation } = useGameLock()
   const { t } = useLanguage()
   const location = useLocation()
@@ -55,6 +56,11 @@ export default function Navbar() {
 
           {/* Profile & Auth */}
           <div className="nav-auth">
+            {adminToken && profile?.role === 'admin' && (
+              <a href="/admin" onClick={(e) => handleNav(e, '/admin')} className="auth-btn auth-btn-login" title="Quản trị">
+                <Shield size={16} /><span>Quản trị</span>
+              </a>
+            )}
             <a
               href="/profile"
               onClick={(e) => handleNav(e, '/profile')}
