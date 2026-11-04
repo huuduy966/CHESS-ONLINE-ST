@@ -14,7 +14,7 @@
     "dev": "concurrently -k -n CLIENT,SERVER -c blue,green \"npm run dev:client\" \"npm run dev:server\""
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

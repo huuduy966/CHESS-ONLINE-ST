@@ -14,7 +14,7 @@ Website chơi cờ vua với 3 chế độ:
 ## Cài đặt
 
 ```bash
-# Cài dependencies cho cả client và server (cần Node 18+)
+# Cài dependencies cho cả client và server (cần Node 22+)
 npm run install:all
 ```
 
