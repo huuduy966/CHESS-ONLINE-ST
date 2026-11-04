@@ -5827,18 +5827,16 @@ body.searching-match .back-btn {
   flex: 1;
   display: flex;
   flex-direction: column;
-  animation: pageSlideFade 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  will-change: transform, opacity;
+  /* Fixed drag previews must use viewport coordinates. */
+  animation: pageFade 0.32s ease-out forwards;
 }
 
-@keyframes pageSlideFade {
+@keyframes pageFade {
   0% {
     opacity: 0;
-    transform: translateY(12px);
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
