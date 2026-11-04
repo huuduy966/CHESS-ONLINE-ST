@@ -3,12 +3,11 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Chess } from 'chess.js'
 import Board from '../components/Board.jsx'
 import StatusBar from '../components/StatusBar.jsx'
-import MoveHistory from '../components/MoveHistory.jsx'
 import ResultModal from '../components/ResultModal.jsx'
 import Clock from '../components/Clock.jsx'
 import CapturedPieces from '../components/CapturedPieces.jsx'
 import { PieceCircle } from '../components/PieceCircle.jsx'
-import { MessageSquare, Send, Activity, Info, ScrollText, Columns, X, Smile } from 'lucide-react'
+import { MessageSquare, Send, Activity, Info, X, Smile } from 'lucide-react'
 import { playMoveSound, sfx } from '../utils/sound.js'
 import { socket } from '../utils/socket.js'
 import { useAuth } from '../utils/auth.jsx'
@@ -37,11 +36,9 @@ export default function OnlineGame() {
   const [rematchState, setRematchState] = useState('idle') // idle | sent | received | declined
   const [savedMoves, setSavedMoves] = useState(null)   // SAN list để xem lại
   const [showResult, setShowResult] = useState(false)
-  const [activeTab, setActiveTab] = useState('chat') // 'chat' | 'moves' | 'split'
-  const [unreadCount, setUnreadCount] = useState(0)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const recordedRef = useRef(false)
-  const chatEndRef = useRef(null)
+  const chatBoxRef = useRef(null)
 
   // Track latest color and state via refs to avoid stale closures
   const colorRef = useRef(color)
@@ -208,12 +205,6 @@ export default function OnlineGame() {
     }
     const onChat = (msg) => {
       setChat((c) => [...c, msg])
-      setActiveTab((tab) => {
-        if (tab === 'moves') {
-          setUnreadCount((cnt) => cnt + 1)
-        }
-        return tab
-      })
     }
     const onResigned = ({ color: resignColor }) => setResignedBy(resignColor)
 
@@ -349,7 +340,8 @@ export default function OnlineGame() {
   }, [showResult, state?.history, savedMoves])
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const box = chatBoxRef.current
+    if (box) box.scrollTop = box.scrollHeight
   }, [chat])
 
   const onMove = useCallback(
@@ -579,64 +571,7 @@ export default function OnlineGame() {
       />
 
       <div className="panel game-side-panel">
-        {/* Tab Switcher: Chat & Move History */}
-        <div className="side-panel-tabs-bar">
-          <button
-            type="button"
-            className={`side-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('chat')
-              setUnreadCount(0)
-            }}
-          >
-            <MessageSquare size={14} />
-            <span>{t('chatTab')}</span>
-            {unreadCount > 0 && (
-              <span className="unread-badge">{unreadCount}</span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            className={`side-tab-btn ${activeTab === 'moves' ? 'active' : ''}`}
-            onClick={() => setActiveTab('moves')}
-          >
-            <ScrollText size={14} />
-            <span>{t('movesTab')}</span>
-            {game.history().length > 0 && (
-              <span className="moves-count-badge">{Math.ceil(game.history().length / 2)}</span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            className={`side-tab-btn tab-icon-only ${activeTab === 'split' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('split')
-              setUnreadCount(0)
-            }}
-            title={t('splitTab')}
-          >
-            <Columns size={14} />
-          </button>
-        </div>
-
-        {/* TAB: MOVES (shown when activeTab === 'moves' or 'split') */}
-        {(activeTab === 'moves' || activeTab === 'split') && (
-          <div className={`moves-tab-wrapper ${activeTab === 'split' ? 'split-mode' : ''}`}>
-            <div className="panel-sub-header">
-              <div className="sub-header-title">
-                <ScrollText size={14} className="text-amber" />
-                <span>{t('moveHistoryTitle')}</span>
-              </div>
-            </div>
-            <MoveHistory history={state?.history || game.history()} />
-          </div>
-        )}
-
-        {/* TAB: CHAT (shown when activeTab === 'chat' or 'split') */}
-        {(activeTab === 'chat' || activeTab === 'split') && (
-          <div className={`chat-tab-wrapper ${activeTab === 'split' ? 'split-mode' : ''}`}>
+          <div className="chat-tab-wrapper">
             <div className="panel-sub-header">
               <div className="sub-header-title">
                 <MessageSquare size={14} className="text-cyan" />
@@ -648,7 +583,7 @@ export default function OnlineGame() {
               </span>
             </div>
 
-            <div className="chat-box-modern">
+            <div className="chat-box-modern" ref={chatBoxRef}>
               {chat.length === 0 ? (
                 <div className="chat-empty-state">
                   <div className="chat-empty-icon-wrap">
@@ -706,7 +641,6 @@ export default function OnlineGame() {
                   )
                 })
               )}
-              <div ref={chatEndRef} />
             </div>
 
             {/* Quick Actions Bar */}
@@ -789,7 +723,6 @@ export default function OnlineGame() {
               </button>
             </form>
           </div>
-        )}
       </div>
 
       <ResultModal

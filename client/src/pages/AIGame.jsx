@@ -16,12 +16,10 @@ import {
   Activity,
   CheckCircle2,
   Trophy,
-  Swords,
-  ScrollText
+  Swords
 } from 'lucide-react'
 import Board from '../components/Board.jsx'
 import StatusBar from '../components/StatusBar.jsx'
-import MoveHistory from '../components/MoveHistory.jsx'
 import ResultModal from '../components/ResultModal.jsx'
 import { PieceCircle, ColorDot, SplitCircle } from '../components/PieceCircle.jsx'
 import CapturedPieces from '../components/CapturedPieces.jsx'
@@ -60,7 +58,6 @@ export default function AIGame() {
   const [loadingHint, setLoadingHint] = useState(false)
   const [stockfishEval, setStockfishEval] = useState({ score: 0, mate: null, depth: 0 })
   const recordedRef = useRef(false)
-  const history = useMemo(() => game.history(), [game, game.fen()])
   const gameRef = useRef(game)
   gameRef.current = game
 
@@ -547,10 +544,13 @@ export default function AIGame() {
     <div className="game-page">
       {/* Left Panel: Stockfish Info, Evaluation, Actions */}
       <div className="panel">
-        <div className="panel-header-row">
-          <div className="panel-header-badge">
-            <Fish size={16} className="text-cyan" />
-            <span>Stockfish 19 Engine</span>
+        <div className="ai-panel-header">
+          <div className="ai-panel-brand">
+            <span className="ai-panel-brand-icon"><Fish size={18} /></span>
+            <span className="ai-panel-brand-text">
+              <strong>Stockfish 19</strong>
+              <small>Chess Engine</small>
+            </span>
           </div>
           <span className={`ai-match-mode-pill ${gameType}`}>
             {gameType === 'practice' ? <Lightbulb size={13} /> : <Swords size={13} />}
@@ -700,8 +700,8 @@ export default function AIGame() {
         }
       />
 
-      {/* Right Panel: Game Status & Move History */}
-      <div className="panel game-side-panel">
+      {/* Right Panel: Game Status */}
+      <div className="panel game-side-panel status-side-panel">
         <div className="panel-section-title">
           <Activity size={16} className="text-amber" />
           <h3>{t('matchStatusTitle')}</h3>
@@ -720,11 +720,6 @@ export default function AIGame() {
           }
         />
 
-        <div className="panel-section-title" style={{ marginTop: '0.4rem' }}>
-          <ScrollText size={16} className="text-cyan" />
-          <h3>{t('moveHistoryTitle')}</h3>
-        </div>
-        <MoveHistory history={history} />
       </div>
 
       {/* Result Modal */}

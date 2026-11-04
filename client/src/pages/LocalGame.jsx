@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { Chess } from 'chess.js'
 import { useNavigate, Link } from 'react-router-dom'
-import { Users, RotateCcw, Undo2, Globe, ArrowRight, Lightbulb, Activity, ScrollText } from 'lucide-react'
+import { Users, RotateCcw, Undo2, Globe, ArrowRight, Lightbulb, Activity } from 'lucide-react'
 import Board from '../components/Board.jsx'
 import StatusBar from '../components/StatusBar.jsx'
-import MoveHistory from '../components/MoveHistory.jsx'
 import GameOverModal from '../components/GameOverModal.jsx'
 import CapturedPieces from '../components/CapturedPieces.jsx'
 import { PieceCircle } from '../components/PieceCircle.jsx'
@@ -154,17 +153,12 @@ export default function LocalGame() {
         }
       />
 
-      <div className="panel game-side-panel">
+      <div className="panel game-side-panel status-side-panel">
         <div className="panel-section-title">
           <Activity size={16} className="text-amber" />
           <h3>{t('matchStatusTitle')}</h3>
         </div>
         <StatusBar game={game} />
-        <div className="panel-section-title" style={{ marginTop: '0.4rem' }}>
-          <ScrollText size={16} className="text-cyan" />
-          <h3>{t('moveHistoryTitle')}</h3>
-        </div>
-        <MoveHistory history={history} />
       </div>
 
       <GameOverModal game={game} onRestart={reset} onHome={() => navigate('/')} />

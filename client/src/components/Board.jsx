@@ -1,10 +1,17 @@
 import { Chessboard } from 'react-chessboard'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Chess } from 'chess.js'
-import { Zap } from 'lucide-react'
+import { X, Zap } from 'lucide-react'
 import { BOARD_DARK, BOARD_LIGHT, LAST_MOVE_FROM, LAST_MOVE_TO } from '../utils/boardTheme.js'
+import { useLanguage } from '../utils/language.jsx'
 
 const EMPTY_ARROWS = []
+const PROMOTION_CHOICES = [
+  { type: 'q', white: '♕', black: '♛', vi: 'Hậu', en: 'Queen' },
+  { type: 'r', white: '♖', black: '♜', vi: 'Xe', en: 'Rook' },
+  { type: 'b', white: '♗', black: '♝', vi: 'Tượng', en: 'Bishop' },
+  { type: 'n', white: '♘', black: '♞', vi: 'Mã', en: 'Knight' }
+]
 
 export default function Board({
   game,
@@ -18,9 +25,15 @@ export default function Board({
   topBar = null,
   bottomBar = null
 }) {
+  const { lang } = useLanguage()
   const [moveFrom, setMoveFrom] = useState('')
   const [optionSquares, setOptionSquares] = useState({})
   const [premoves, setPremoves] = useState([])
+  const [promotionMove, setPromotionMove] = useState(null)
+
+  useEffect(() => {
+    if (promotionMove && promotionMove.fen !== game.fen()) setPromotionMove(null)
+  }, [game.fen(), promotionMove])
 
   const premovesRef = useRef([])
   premovesRef.current = premoves
@@ -256,13 +269,35 @@ export default function Board({
     return true
   }
 
+  const requestPromotion = (from, to, premove = false) => {
+    const piece = game.get(from)
+    if (piece?.type !== 'p' || to[1] !== (piece.color === 'w' ? '8' : '1')) return false
+    try {
+      let position = game
+      if (premove) {
+        const tokens = game.fen().split(' ')
+        tokens[1] = piece.color
+        tokens[3] = '-'
+        position = new Chess(tokens.join(' '))
+      }
+      if (!position.moves({ square: from, verbose: true }).some((move) => move.to === to && move.promotion)) return false
+    } catch {
+      return false
+    }
+    setPromotionMove({ from, to, color: piece.color, premove, fen: game.fen() })
+    setMoveFrom('')
+    setOptionSquares({})
+    return true
+  }
+
   // Record a premove input
-  const handlePremoveInput = (from, to) => {
+  const handlePremoveInput = (from, to, promotion) => {
     if (from === to) return
     const piece = game.get(from)
     if (!piece || piece.color !== myColor) return
+    if (!promotion && requestPromotion(from, to, true)) return
 
-    const newPremove = { from, to, promotion: 'q' }
+    const newPremove = { from, to, promotion: promotion || 'q' }
     // Replace if this piece already had a premove, otherwise append to queue
     const filtered = premovesRef.current.filter((pm) => pm.from !== from)
     const newQueue = [...filtered, newPremove]
@@ -274,6 +309,7 @@ export default function Board({
   }
 
   const onSquareClick = (square) => {
+    if (promotionMove) return
     const clickedPiece = game.get(square)
 
     // ---- NORMAL TURN ----
@@ -298,6 +334,7 @@ export default function Board({
         return
       }
 
+      if (requestPromotion(moveFrom, square)) return
       const ok = onMove({ from: moveFrom, to: square, promotion: 'q' })
       if (ok) {
         setMoveFrom('')
@@ -339,12 +376,14 @@ export default function Board({
   }
 
   const onPieceDrop = (from, to) => {
+    if (promotionMove) return false
     if (from === to) return false
     const piece = game.get(from)
     if (!piece) return false
 
     if (mode === 'local') {
       if (piece.color !== game.turn()) return false
+      if (requestPromotion(from, to)) return false
       const ok = onMove({ from, to, promotion: 'q' })
       if (ok) {
         setMoveFrom('')
@@ -357,6 +396,7 @@ export default function Board({
     // Normal move
     if (isMyTurn) {
       if (piece.color !== game.turn()) return false
+      if (requestPromotion(from, to)) return false
       const ok = onMove({ from, to, promotion: 'q' })
       if (ok) {
         setMoveFrom('')
@@ -373,8 +413,24 @@ export default function Board({
     return false
   }
 
+  const choosePromotion = (promotion) => {
+    if (!promotionMove) return
+    const { from, to, premove } = promotionMove
+    setPromotionMove(null)
+    if (premove && !isMyTurn) {
+      handlePremoveInput(from, to, promotion)
+      return
+    }
+    const ok = onMove({ from, to, promotion })
+    if (ok) {
+      setMoveFrom('')
+      setOptionSquares({})
+      if (onDismissHint) onDismissHint()
+    }
+  }
+
   const isDraggablePiece = ({ piece }) => {
-    if (game.isGameOver()) return false
+    if (promotionMove || game.isGameOver()) return false
     if (mode === 'local') {
       return piece[0] === game.turn()
     }
@@ -398,8 +454,32 @@ export default function Board({
           customDarkSquareStyle={BOARD_DARK}
           customLightSquareStyle={BOARD_LIGHT}
           arePiecesDraggable={true}
+          autoPromoteToQueen={true}
           animationDuration={200}
         />
+        {promotionMove && (
+          <div className="promotion-overlay" role="dialog" aria-modal="true" aria-label={lang === 'en' ? 'Choose promotion piece' : 'Chọn quân phong cấp'} onKeyDown={(event) => { if (event.key === 'Escape') setPromotionMove(null) }}>
+            <div className="promotion-picker">
+              <div className="promotion-picker-heading">
+                <div>
+                  <span className="promotion-eyebrow">{lang === 'en' ? 'Pawn promotion' : 'Phong cấp tốt'}</span>
+                  <h3>{lang === 'en' ? 'Choose a piece' : 'Chọn quân cờ'}</h3>
+                </div>
+                <button type="button" className="promotion-cancel" onClick={() => setPromotionMove(null)} aria-label={lang === 'en' ? 'Cancel' : 'Hủy'}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="promotion-options">
+                {PROMOTION_CHOICES.map((choice) => (
+                  <button key={choice.type} type="button" autoFocus={choice.type === 'q'} onClick={() => choosePromotion(choice.type)} aria-label={choice[lang]}>
+                    <span className="promotion-piece" aria-hidden="true">{choice[promotionMove.color === 'w' ? 'white' : 'black']}</span>
+                    <span className="promotion-label">{choice[lang]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       {bottomBar && <div className="board-player-bar bottom-bar">{bottomBar}</div>}
       {premoves.length > 0 && (
