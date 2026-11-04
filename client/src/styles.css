@@ -6397,6 +6397,16 @@ body.searching-match .back-btn {
   box-shadow: 0 12px 32px rgba(24, 47, 75, 0.14), 0 0 0 1px #dbe4ee;
 }
 
+.admin-page { width: min(960px, 100%); margin: 1rem auto 3rem; display: grid; gap: 1rem; }
+.admin-heading, .admin-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.admin-heading h2 { margin: 0; }
+.admin-page .panel { min-width: 0; }
+.admin-list { display: grid; gap: 0.6rem; }
+.admin-row { padding: 0.7rem 0; border-top: 1px solid #dbe4ee; }
+.admin-row small { display: block; margin-top: 0.3rem; color: var(--text-dim); }
+.admin-error { color: var(--danger); }
+@media (max-width: 600px) { .admin-row { align-items: flex-start; flex-direction: column; } }
+
 @media (max-width: 760px) {
   .board-wrap > .board-inner,
   .board-surface-box { border-width: 5px; }

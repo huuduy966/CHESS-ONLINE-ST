@@ -11,6 +11,7 @@ const SERVER_URL =
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => localStorage.getItem('chess-current-user') || null)
+  const [adminToken, setAdminToken] = useState(() => sessionStorage.getItem('chess-admin-token'))
   const [profile, setProfile] = useState(() => {
     const cachedUser = localStorage.getItem('chess-current-user')
     if (cachedUser) {
@@ -65,12 +66,15 @@ export function AuthProvider({ children }) {
     }
   }, [refreshProfile])
 
-  const login = useCallback((userData) => {
+  const login = useCallback((userData, token = null) => {
     const username = typeof userData === 'string' ? userData.trim() : userData?.username?.trim()
     if (!username) return
 
     localStorage.setItem('chess-current-user', username)
     localStorage.setItem('chess-name', username)
+    if (token) sessionStorage.setItem('chess-admin-token', token)
+    else sessionStorage.removeItem('chess-admin-token')
+    setAdminToken(token)
     setUser(username)
 
     if (typeof userData === 'object' && userData !== null && userData.elo !== undefined) {
@@ -85,6 +89,12 @@ export function AuthProvider({ children }) {
   }, [refreshProfile])
 
   const logout = useCallback(() => {
+    const token = sessionStorage.getItem('chess-admin-token')
+    if (token) {
+      fetch(`${SERVER_URL}/api/admin/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
+    }
+    sessionStorage.removeItem('chess-admin-token')
+    setAdminToken(null)
     const cur = localStorage.getItem('chess-current-user')
     if (cur) {
       try {
@@ -217,6 +227,7 @@ export function AuthProvider({ children }) {
       value={{
         user,
         profile,
+        adminToken,
         login,
         logout,
         recordGame,

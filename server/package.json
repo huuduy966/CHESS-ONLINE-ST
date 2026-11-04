@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch index.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test admin.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
@@ -16,5 +17,8 @@
   },
   "description": "",
   "main": "index.js",
-  "keywords": []
+  "keywords": [],
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
 }
